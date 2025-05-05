@@ -3,65 +3,65 @@
   "version": "0.5.0",
   "private": true,
   "dependencies": {
-    "@mui/icons-material": "^5.11.16",
-    "@mui/material": "^5.12.0",
-    "constructs": "^10.2.7",
-    "oidc-client": "^1.11.5",
-    "papaparse": "^5.4.1",
-    "react": "^18.3.1",
-    "react-admin": "^5.8.0",
-    "react-admin-color-picker": "^1.0.3",
-    "react-dom": "^18.3.1",
-    "react-favicon": "^2.0.3",
-    "react-router": "^7.5.3",
-    "web-vitals": "^2.1.4"
+      "@mui/icons-material": "^5.11.16",
+      "@mui/material": "^5.12.0",
+      "constructs": "^10.2.7",
+      "oidc-client": "^1.11.5",
+      "papaparse": "^5.4.1",
+      "react": "^18.3.1",
+      "react-admin": "5.7.4",
+      "react-admin-color-picker": "^1.0.3",
+      "react-dom": "^18.3.1",
+      "react-favicon": "^2.0.3",
+      "react-router": "7.1.5",
+      "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "serve": "vite preview",
-    "type-check": "tsc --noEmit",
-    "lint": "eslint --fix --ext .js,.jsx,.ts,.tsx ./src",
-    "format": "prettier --write ./src",
-    "cdk-build": "tsc --target ES2018 --moduleResolution node --module commonjs cdk/bin/sso-cup.ts",
-    "lambda-build": "cd cdk/lambda/importusersworker && npm i && npm run build && cd ../brandings && npm i && npm run build && cd ../brandingslist && npm i && npm run build && cd ../samlslist && npm i && npm run build && cd ../serviceproviderslist && npm i && npm run build && cd ../amfaconfig && npm i && npm run build && cd ../samls && npm i && npm run build && cd ../smtpconfig && npm i --legacy-peer-deps && npm run build && cd ../../..",
-    "deploy": "npm run lambda-build && npm run cdk-build && cdk deploy --all --profile $npm_config_profile"
+      "dev": "vite",
+      "build": "vite build",
+      "serve": "vite preview",
+      "type-check": "tsc --noEmit",
+      "lint": "eslint --fix --ext .js,.jsx,.ts,.tsx ./src",
+      "format": "prettier --write ./src",
+      "cdk-build": "tsc --target ES2018 --moduleResolution node --module commonjs cdk/bin/sso-cup.ts",
+      "lambda-build": "cd cdk/lambda/importusersworker && npm i && npm run build && cd ../brandings && npm i && npm run build && cd ../brandingslist && npm i && npm run build && cd ../samlslist && npm i && npm run build && cd ../serviceproviderslist && npm i && npm run build && cd ../amfaconfig && npm i && npm run build && cd ../samls && npm i && npm run build && cd ../smtpconfig && npm i --legacy-peer-deps && npm run build && cd ../../..",
+      "deploy": "npm run lambda-build && npm run cdk-build && cdk deploy --all --profile $npm_config_profile"
   },
   "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
+      "extends": [
+          "react-app",
+          "react-app/jest"
+      ]
   },
   "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+      "production": [
+          ">0.2%",
+          "not dead",
+          "not op_mini all"
+      ],
+      "development": [
+          "last 1 chrome version",
+          "last 1 firefox version",
+          "last 1 safari version"
+      ]
   },
   "devDependencies": {
-    "@eslint/js": "^9.13.0",
-    "@types/node": "^18.16.1",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.3",
-    "aws-cdk-lib": "^2.160.0",
-    "esbuild": ">=0.25.0",
-    "eslint": "^9.13.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-react-hooks": "^5.0.0",
-    "eslint-plugin-react-refresh": "^0.4.14",
-    "globals": "^15.11.0",
-    "prettier": "^3.3.3",
-    "source-map-support": "^0.5.21",
-    "typescript": "^5.6.2",
-    "typescript-eslint": "^8.11.0",
-    "vite": "^6.3.4"
+      "@eslint/js": "^9.13.0",
+      "@types/node": "^18.16.1",
+      "@types/react": "^18.3.12",
+      "@types/react-dom": "^18.3.1",
+      "@vitejs/plugin-react": "^4.3.3",
+      "aws-cdk-lib": "^2.160.0",
+      "esbuild": ">=0.25.0",
+      "eslint": "^9.13.0",
+      "eslint-config-prettier": "^9.1.0",
+      "eslint-plugin-react-hooks": "^5.0.0",
+      "eslint-plugin-react-refresh": "^0.4.14",
+      "globals": "^15.11.0",
+      "prettier": "^3.3.3",
+      "source-map-support": "^0.5.21",
+      "typescript": "^5.6.2",
+      "typescript-eslint": "^8.11.0",
+      "vite": "^5.4.10"
   }
 }
