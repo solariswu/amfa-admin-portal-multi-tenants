@@ -59,6 +59,9 @@ const getEntityId = async (xmlUrl) => {
 
     const response = await fetch(xmlUrl)
     console.log("response", response);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ${xmlUrl}`);
+    }
 
     const textRes = await response.text();
 
@@ -88,7 +91,16 @@ export const postResData = async (payload, samlurl, dynamodbISP, cognitoISP, cog
     console.log('postResData Input:', payload);
 
     if (payload.metadataUrl) {
-        const entityId = await getEntityId(payload.metadataUrl);
+        let entityId = null;
+        try {
+            entityId = await getEntityId(payload.metadataUrl);
+        }
+        catch (e) {
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ data: e.message, error: e.message }),
+            }
+        }
 
         if (entityId) {
             const resClean = await fetch(samlCleanUrl, {
