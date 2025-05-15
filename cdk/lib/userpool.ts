@@ -173,6 +173,9 @@ export class SSOUserPool {
         callbackUrls: enduser_portal_callbackurls,
         logoutUrls: enduser_portal_logouturls,
       },
+      idTokenValidity: Duration.hours(8),
+      accessTokenValidity: Duration.hours(8),
+      refreshTokenValidity: Duration.minutes(481),
       userPoolClientName: 'amfasys_spPortalClient',
       supportedIdentityProviders: [UserPoolClientIdentityProvider.custom('apersona')],
     });
