@@ -29,7 +29,7 @@ export const UserImportListWidget = (props) => {
   let hasPicture = false;
   let hasGender = false;
   let hasBirthdate = false;
-  let hasAddress = false;
+  // let hasAddress = false;
   let hasAlterEmail = false;
   let hasVoiceNumber = false;
   let hasCity = false;
@@ -43,7 +43,7 @@ export const UserImportListWidget = (props) => {
     if (item.picture && item.picture.length > 0) hasPicture = true;
     if (item.gender && item.gender.length > 0) hasGender = true;
     if (item.birthdate && item.birthdate.length > 0) hasBirthdate = true;
-    if (item.address && item.address.length > 0) hasAddress = true;
+    // if (item.address && item.address.length > 0) hasAddress = true;
     if (item['alter-email'] && item['alter-email'].length > 0) hasAlterEmail = true;
     if (item['voice-number'] && item['voice-number'].length > 0) hasVoiceNumber = true;
     if (item.locale && item.locale.length > 0) hasCity = true;
@@ -312,7 +312,7 @@ export const UserImportListWidget = (props) => {
                 }
               />
             )}
-            {hasAddress && <TextField source="address" />}
+            {/* {hasAddress && <TextField source="address" />} */}
           </Datagrid>
           <Pagination />
         </ListContextProvider>

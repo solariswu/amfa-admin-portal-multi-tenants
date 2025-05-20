@@ -78,7 +78,7 @@ export const postResData = async (data, cognitoISP) => {
 			case 'profile':
 			case 'gender':
 			case 'birthdate':
-			case 'address':
+			// case 'address':
 				if (data[key]) {
 					attributes.push({ "Name": key.toLowerCase(), "Value": data[key] });
 				}
@@ -168,7 +168,7 @@ export const postResData = async (data, cognitoISP) => {
 
 		const directMappingArrtibutes = [
 			'email', 'phone_number', 'locale', 'sub', 'profile', 'given_name', 'family_name',
-			'nickname', 'name', 'middle_name', 'picture', 'profile', 'gender', 'birthdate', 'address'];
+			'nickname', 'name', 'middle_name', 'picture', 'profile', 'gender', 'birthdate'/*, 'address'*/];
 		const filteredAttributs = item.Attributes.filter(el => directMappingArrtibutes.includes(el.Name));
 		const result = Object.fromEntries(filteredAttributs.map(el => [el.Name, el.Value]))
 

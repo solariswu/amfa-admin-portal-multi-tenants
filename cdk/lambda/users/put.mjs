@@ -118,7 +118,7 @@ export const putResData = async (data, cognitoISP) => {
         // user attributes non-mfa related
         const attributesList = ['locale', 'middle_name',
             'name', 'profile', 'picture', 'gender', 'birthdate',
-            'address', 'family_name', 'given_name', 'nickname'];
+            /*'address',*/ 'family_name', 'given_name', 'nickname'];
         // update user attributes
         attributesList.map(attributeName => {
             const newValue = data[attributeName] ? data[attributeName] : '';

@@ -96,7 +96,7 @@ export const handler = async (event) => {
         case "picture":
         case "gender":
         case "birthdate":
-        case "address":
+        // case "address":
           if (data[key]) {
             attributes.push({ Name: key.toLowerCase(), Value: data[key] });
           }

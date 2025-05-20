@@ -76,7 +76,7 @@ export const getResData = async (username, cognitoISP) => {
 
 	const directMappingArrtibutes = [
 		'email', 'phone_number', 'locale', 'sub', 'profile', 'given_name', 'family_name',
-		'nickname', 'name', 'middle_name', 'picture', 'profile', 'gender', 'birthdate', 'address'];
+		'nickname', 'name', 'middle_name', 'picture', 'profile', 'gender', 'birthdate' /*,'address'*/];
 	const filteredAttributs = item.UserAttributes.filter(el => directMappingArrtibutes.includes(el.Name));
 	const result = Object.fromEntries(filteredAttributs.map(el => [el.Name, el.Value]))
 

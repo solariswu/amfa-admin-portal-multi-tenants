@@ -274,10 +274,6 @@ export const UserEdit = () => {
                   />
                 </Grid>
                 <Grid item xs={0} sm={1} md={1} lg={1} />
-                <Grid item xs={10} sm={10} md={10} lg={10}>
-                  <TextInput fullWidth source="address" />
-                </Grid>
-                <Grid item xs={0} sm={1} md={1} lg={1} />
               </Grid>
               <Grid container justify="flex-end">
                 <Grid item xs={5} sm={5} md={5} lg={5}>

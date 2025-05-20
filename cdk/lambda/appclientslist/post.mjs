@@ -75,7 +75,7 @@ export const postResData = async (data, cognitoISP, dynamodb) => {
         EnablePropagateAdditionalUserContextData: data.hasClientSecret,
         AuthSessionValidity: 5,
         WriteAttributes: ['email', 'picture'],
-        ReadAttributes: ['address', 'email', 'email_verified',
+        ReadAttributes: [/*'address',*/ 'email', 'email_verified',
             'phone_number', 'phone_number_verified', 'birthdate',
             'given_name', 'family_name', 'gender', 'middle_name',
             'profile', 'picture', 'website']
