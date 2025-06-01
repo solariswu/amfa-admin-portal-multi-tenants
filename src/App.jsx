@@ -1,10 +1,11 @@
 import * as React from "react";
-import { BrowserRouter, Route } from 'react-router-dom';
+import { BrowserRouter } from 'react-router-dom';
 
-import { Admin, Resource, CustomRoutes } from 'react-admin';
+import { Admin, Resource } from 'react-admin';
 import dataProvider from './Component/dataProvider'
 import polyglotI18nProvider from "ra-i18n-polyglot";
 import englishMessages from "ra-language-english";
+import Favicon from 'react-favicon'
 
 import users from './users';
 import groups from "./applications";
@@ -56,6 +57,7 @@ const i18nProvider = polyglotI18nProvider(locale => messages[locale], "en", {
 });
 export const App = () => (
   <>
+    <Favicon url="/favicon.ico" />
   <BrowserRouter>
     <Admin
       theme={theme}
