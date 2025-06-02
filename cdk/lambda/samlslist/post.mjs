@@ -1,6 +1,5 @@
 import xml2js from 'xml2js';
 import { PutItemCommand } from '@aws-sdk/client-dynamodb';
-import { stat } from 'fs';
 
 const storeSPInfo = async (payload, dynamodbISP) => {
 
@@ -171,9 +170,19 @@ export const postResData = async (payload, samlurl, dynamodbISP, cognitoISP, cog
                 released: payload.released,
             }, dynamodbISP);
 
+            const data = {
+                id: encodedId,
+                name: payload.name,
+                logoUrl: payload.logoUrl,
+                serviceUrl: payload.serviceUrl,
+                released: payload.released,
+                metadataUrl: payload.metadataUrl,
+                entityId,
+            }
+
             return {
                 statusCode: response.status,
-                body: JSON.stringify({ data: 'SP registered on saml proxy server' }),
+                body: JSON.stringify({ data }),
             }
         }
         else {

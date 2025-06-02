@@ -26,7 +26,7 @@ export const handler = async (event) => {
             const postResult = await postResData(body.data, samlurl, dynamodb, null, event.headers.authorization);
 
             return {
-                statusCode: postResData.statusCode,
+                statusCode: postResult.statusCode,
                 headers: {
                     'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
                     'Access-Control-Allow-Origin': '*',
