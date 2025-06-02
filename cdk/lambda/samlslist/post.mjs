@@ -171,7 +171,7 @@ export const postResData = async (payload, samlurl, dynamodbISP, cognitoISP, cog
             }, dynamodbISP);
 
             const data = {
-                id: encodedId,
+                id: btoa(entityId),
                 name: payload.name,
                 logoUrl: payload.logoUrl,
                 serviceUrl: payload.serviceUrl,
