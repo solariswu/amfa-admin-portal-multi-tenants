@@ -27,21 +27,6 @@ export const handler = async (event) => {
 
             console.log('postResult', postResult);
 
-            const data = {
-                statusCode: postResult.statusCode,
-                headers: {
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
-                    'Access-Control-Expose-Headers': 'Content-Range',
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Credentials': true,
-                },
-                body: postResult.data,
-            };
-
-            console.log('detailed response', data)
-
             return {
                 statusCode: postResult.statusCode,
                 headers: {
@@ -52,7 +37,7 @@ export const handler = async (event) => {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Credentials': true,
                 },
-                body: postResult.data,
+                body: postResult.body,
             };
         }
         else {
