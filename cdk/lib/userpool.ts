@@ -95,7 +95,7 @@ export class SSOUserPool {
       // new admin user creation message
       userInvitation: {
         emailSubject: 'aPersona Identity Admin Portal - New Account',
-        emailBody: `<body><p>Hello {username},</p><p>Your new aPersona Identity admin account has been created.</p><p>Your temporary password is <a href="https://${stage_config[current_stage].domainName}" target="_blank" rel="noreffer">{####}</a> and the URL is https://${stage_config[current_stage].domainName}</p><p>(It may take a few minutes to several hours for this URL to propagate and route correctly.)</p><p>Please make a note of it, and welcome to aPersona Identity on AWS!!</p><p>(When copying your password, be sure that you don't select any spaces before or after the password.)</p><p>~ Your aPersona Team</p></body>`,
+        emailBody: `<body><p>Hello {username},</p><p>Your new aPersona Identity admin account has been created.</p><p>Your temporary password is </p><p><strong>{####}</strong></p><p>and the URL is <a href="https://${stage_config[current_stage].domainName}" target="_blank" rel="noreffer">https://${stage_config[current_stage].domainName}</a></p><p>(It may take a few minutes to several hours for this URL to propagate and route correctly.)</p><p>Please make a note of it, and welcome to aPersona Identity on AWS!!</p><p>(When copying your password, be sure that you don't select any spaces before or after the password.)</p><p>~ Your aPersona Team</p></body>`,
         smsMessage: 'Hello {username}, Your new aPersona Identity admin account has been created. Your temporary password is {####}',
       },
     });
