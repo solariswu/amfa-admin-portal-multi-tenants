@@ -1,4 +1,4 @@
-import { Construct } from 'constructs';
+import { Construct } from "constructs";
 import {
   UserPool,
   UserPoolClient,
@@ -7,19 +7,22 @@ import {
   Mfa,
   UserPoolClientIdentityProvider,
   UserPoolIdentityProviderOidc,
-} from 'aws-cdk-lib/aws-cognito';
+} from "aws-cdk-lib/aws-cognito";
 
-import { Duration, Fn } from 'aws-cdk-lib';
+import { Duration, Fn } from "aws-cdk-lib";
 
-import { AppStackProps } from './application';
+import { AppStackProps } from "./application";
 import {
   hostedUI_domain_prefix,
-  app_userpool_info, enduser_portal_callbackurls,
+  app_userpool_info,
+  enduser_portal_callbackurls,
   enduser_portal_logouturls,
   stage_config,
-  current_stage
-} from '../config';
+  current_stage,
+  oidc_info,
+} from "../config";
 
+const SU_POOL_NAME = "apersona-su"
 
 export class SSOUserPool {
   scope: Construct;
@@ -40,19 +43,24 @@ export class SSOUserPool {
     this.scope = scope;
     this.account = props.env?.account;
     this.region = props.env?.region;
-    this.domainName = props.domainName ? props.domainName : '';
+    this.domainName = props.domainName ? props.domainName : "";
 
-    this.adminUserpool = this.createUserPool('Admin');
+    this.adminUserpool = this.createUserPool("Admin");
     this.adminClient = this.addAdminClient();
 
-    const userpoolid = Fn.importValue('useridppoolid').toString();
+    const userpoolid = Fn.importValue("useridppoolid").toString();
     // this.appUserPoolId = userpoolid
-    this.appUserPoolId = userpoolid && userpoolid.length > 1 ? userpoolid :
-      app_userpool_info.userPoolId ? app_userpool_info.userPoolId : '';
+    this.appUserPoolId =
+      userpoolid && userpoolid.length > 1
+        ? userpoolid
+        : app_userpool_info.userPoolId
+          ? app_userpool_info.userPoolId
+          : "";
 
     this.samlClient = this.addSamlClient();
     this.enduserPortalClient = this.addEnduserPortalClient();
 
+    this.oidcProvider = this.createAPersonaSUProvider();
   }
 
   private createUserPool = (type: string) => {
@@ -94,30 +102,55 @@ export class SSOUserPool {
       accountRecovery: AccountRecovery.EMAIL_ONLY,
       // new admin user creation message
       userInvitation: {
-        emailSubject: 'aPersona Identity Admin Portal - New Account',
+        emailSubject: "aPersona Identity Admin Portal - New Account",
         emailBody: `<body><p>Hello {username},</p><p>Your new aPersona Identity admin account has been created.</p><p>Your temporary password is </p><p><strong>{####}</strong></p><p>and the URL is <a href="https://${stage_config[current_stage].domainName}" target="_blank" rel="noreffer">https://${stage_config[current_stage].domainName}</a></p><p>(It may take a few minutes to several hours for this URL to propagate and route correctly.)</p><p>Please make a note of it, and welcome to aPersona Identity on AWS!!</p><p>(When copying your password, be sure that you don't select any spaces before or after the password.)</p><p>~ Your aPersona Team</p></body>`,
-        smsMessage: 'Hello {username}, Your new aPersona Identity admin account has been created. Your temporary password is {####}',
+        smsMessage:
+          "Hello {username}, Your new aPersona Identity admin account has been created. Your temporary password is {####}",
       },
     });
-  }
+  };
+
+  // create a new OIDC provider as SU federated provider
+  private createAPersonaSUProvider = () => {
+    const scopes = ["email", "profile", "openid"];
+    return new UserPoolIdentityProviderOidc(
+      this.scope,
+      `${SU_POOL_NAME}-oidc-provider`,
+      {
+        userPool: this.adminUserpool,
+        clientId: oidc_info.clientId,
+        clientSecret: oidc_info.clientSecret,
+        issuerUrl: oidc_info.issuerUrl,
+        scopes,
+        name : SU_POOL_NAME,
+      },
+    );
+  };
 
   private addAdminClient() {
-    const str = hostedUI_domain_prefix?.replace(/\./g, '').toLowerCase() + this.region + this.account;
-    let hash = 0
+    const str =
+      hostedUI_domain_prefix?.replace(/\./g, "").toLowerCase() +
+      this.region +
+      this.account;
+    let hash = 0;
     if (str) {
       for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0
+        hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
       }
     }
 
-    this.adminUserpool.addDomain('adminHostedUI-domain', {
+    this.adminUserpool.addDomain("adminHostedUI-domain", {
       cognitoDomain: {
         domainPrefix: `${hostedUI_domain_prefix}-${(hash >>> 0).toString(36)}`,
       },
     });
 
     const supportedIdentityProviders = [UserPoolClientIdentityProvider.COGNITO];
-    return new UserPoolClient(this.scope, 'adminClient', {
+    supportedIdentityProviders.push(
+      UserPoolClientIdentityProvider.custom(SU_POOL_NAME),
+    );
+
+    return new UserPoolClient(this.scope, "adminClient", {
       userPool: this.adminUserpool,
       generateSecret: false,
       authFlows: {
@@ -127,19 +160,32 @@ export class SSOUserPool {
         flows: {
           authorizationCodeGrant: true,
         },
-        scopes: [OAuthScope.EMAIL, OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.COGNITO_ADMIN],
-        callbackUrls: [`https://${this.domainName}`, 'http://localhost:5173', `https://${this.domainName}/auth-callback`, 'http://localhost:5173/auth-callback'],
-        logoutUrls: [`https://${this.domainName}`, 'http://localhost:5173',],
+        scopes: [
+          OAuthScope.EMAIL,
+          OAuthScope.OPENID,
+          OAuthScope.PROFILE,
+          OAuthScope.COGNITO_ADMIN,
+        ],
+        callbackUrls: [
+          `https://${this.domainName}`,
+          "http://localhost:5173",
+          `https://${this.domainName}/auth-callback`,
+          "http://localhost:5173/auth-callback",
+        ],
+        logoutUrls: [`https://${this.domainName}`, "http://localhost:5173"],
       },
-      userPoolClientName: 'AdminPortalClient',
+      userPoolClientName: "AdminPortalClient",
       supportedIdentityProviders,
     });
   }
 
   private addSamlClient() {
-
-    return new UserPoolClient(this.scope, 'samlproxyclient', {
-      userPool: UserPool.fromUserPoolId(this.scope, 'appuserpool', this.appUserPoolId),
+    return new UserPoolClient(this.scope, "samlproxyclient", {
+      userPool: UserPool.fromUserPoolId(
+        this.scope,
+        "appuserpool",
+        this.appUserPoolId,
+      ),
       generateSecret: true,
       authFlows: {
         userSrp: true,
@@ -149,18 +195,23 @@ export class SSOUserPool {
           authorizationCodeGrant: true,
         },
         scopes: [OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.EMAIL],
-        callbackUrls: ['http://localhost:3000/'/*, ...apps_urls*/],
-        logoutUrls: ['http://localhost:3000/'/*, ...apps_urls*/],
+        callbackUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
+        logoutUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
       },
-      userPoolClientName: 'samlproxyClient',
-      supportedIdentityProviders: [UserPoolClientIdentityProvider.custom('apersona')],
+      userPoolClientName: "samlproxyClient",
+      supportedIdentityProviders: [
+        UserPoolClientIdentityProvider.custom("apersona"),
+      ],
     });
-  };
+  }
 
   private addEnduserPortalClient() {
-
-    return new UserPoolClient(this.scope, 'spportalclient', {
-      userPool: UserPool.fromUserPoolId(this.scope, 'appuserpool2', this.appUserPoolId),
+    return new UserPoolClient(this.scope, "spportalclient", {
+      userPool: UserPool.fromUserPoolId(
+        this.scope,
+        "appuserpool2",
+        this.appUserPoolId,
+      ),
       generateSecret: false,
       authFlows: {
         userSrp: true,
@@ -176,9 +227,10 @@ export class SSOUserPool {
       idTokenValidity: Duration.hours(8),
       accessTokenValidity: Duration.hours(8),
       refreshTokenValidity: Duration.minutes(481),
-      userPoolClientName: 'amfasys_spPortalClient',
-      supportedIdentityProviders: [UserPoolClientIdentityProvider.custom('apersona')],
+      userPoolClientName: "amfasys_spPortalClient",
+      supportedIdentityProviders: [
+        UserPoolClientIdentityProvider.custom("apersona"),
+      ],
     });
-  };
-
+  }
 }

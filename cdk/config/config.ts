@@ -11,9 +11,9 @@ export const amfa_api_base = process.env.TENANT_ID + '.' + process.env.ROOT_DOMA
 
 export const oidc_info = {
 	isNeeded: false,
-	issuerUrl: 'https://login.microsoftonline.com/37da09ec-35db-45cf-a992-056cd0b990e8/v2.0',
+	issuerUrl: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_edJFzXt7B',
 	clientSecret: 'fill-later',
-	clientId: 'ac58191d-c9cc-455a-b05a-ae9f2bd47b42',
+	clientId: '56abvnbvlgiaa9lgnbcaule3em',
 }
 
 export const stage_config = {
