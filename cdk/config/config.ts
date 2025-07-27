@@ -9,6 +9,8 @@ export const tenant_id = process.env.TENANT_ID;
 
 export const amfa_api_base = process.env.TENANT_ID + '.' + process.env.ROOT_DOMAIN_NAME;
 
+export const suapi_endpoint = 'https://api.su.apersona-id.com/register/'
+
 export const oidc_info = {
 	isNeeded: false,
 	issuerUrl: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_edJFzXt7B',

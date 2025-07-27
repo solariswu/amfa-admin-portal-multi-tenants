@@ -7,7 +7,7 @@ import { Duration } from 'aws-cdk-lib';
 
 import * as path from 'path';
 
-import { current_stage, samlproxy_base_url, stage_config, AMFATENANT_TABLE } from '../config';
+import { current_stage, samlproxy_base_url, stage_config, suapi_endpoint } from '../config';
 
 export const createPostDeploymentLambda = (
     scope: Construct,
@@ -31,6 +31,7 @@ export const createPostDeploymentLambda = (
             ROOT_DOMAIN_NAME: stage_config[current_stage].domainName,
             TENANT_ID: process.env.TENANT_ID? process.env.TENANT_ID : 'unknown',
             ADMIN_EMAIL: process.env.ADMIN_EMAIL? process.env.ADMIN_EMAIL : 'unknown',
+            SUAPI_ENDPOINT: suapi_endpoint,
         },
         timeout: Duration.minutes(5),
     });
