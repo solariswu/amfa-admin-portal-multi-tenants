@@ -153,7 +153,7 @@ const createSUIDP = async (domainName) => {
           }),
         );
 
-        console.log("create identity provider", res);
+        console.log("create SUIDP success:", res);
         return true;
       } else {
         console.error("failed to create SUIDP", data);
