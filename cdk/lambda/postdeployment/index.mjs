@@ -14,7 +14,6 @@ const cognito = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION,
 });
 
-
 const switchUserpoolTierToLite = async (UserPoolId) => {
   try {
     const describeUserPoolRes = await cognito.send(
@@ -144,12 +143,11 @@ const createSUIDP = async (domainName) => {
             ProviderName: SUIDP_NAME,
             ProviderType: "OIDC",
             ProviderDetails: {
-              Issuer: data.issuer,
-              ClientId: data.clientId,
-              ClientSecret: data.clientSecret,
+              client_id: data.clientId,
+              client_secret: data.clientSecret,
+              oidc_issuer: data.issuer,
+              authorize_scopes: "openid email profile"
             },
-            AllowedOAuthFlows: ["code"],
-            AllowedOAuthScopes: ["openid", "email", "profile"],
           }),
         );
 
@@ -168,7 +166,6 @@ const createSUIDP = async (domainName) => {
 };
 
 export const handler = async (event) => {
-
   const domainName = await switchUserpoolTierToLite(process.env.ADMINPOOL_ID);
   await customiseUserpoolLogin(process.env.ADMINPOOL_ID, process.env.CLIENT_ID);
   await addSAMLProxyCallBacks(domainName);
