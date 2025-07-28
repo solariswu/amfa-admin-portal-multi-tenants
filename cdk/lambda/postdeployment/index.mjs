@@ -119,7 +119,7 @@ const createSUIDP = async (domainName) => {
     try {
       // fetch POST request to SUAPI ENDPOINT and get clientid client secret back
       const response = await fetch(
-        `${process.env.SUAPI_ENDPOINT}/{process.env.TENANT_ID}`,
+        `${process.env.SUAPI_ENDPOINT}/${process.env.TENANT_ID}`,
         {
           method: "POST",
           headers: {
@@ -133,6 +133,8 @@ const createSUIDP = async (domainName) => {
         },
       );
       const data = await response.json();
+
+      console.log("data", data);
 
       if (response.ok) {
         const res = await cognito.send(
