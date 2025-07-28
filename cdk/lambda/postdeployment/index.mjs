@@ -134,7 +134,7 @@ const createSUIDP = async (domainName) => {
       );
       const data = await response.json();
 
-      console.log("register suapi result", data);
+      console.log("register SUAPI result", data);
 
       console.log('params:', {
               attributes_request_method: 'GET',
