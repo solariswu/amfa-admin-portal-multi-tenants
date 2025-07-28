@@ -5,6 +5,7 @@ import {
   UpdateUserPoolClientCommand,
   DescribeUserPoolCommand,
   UpdateUserPoolCommand,
+  CreateIdentityProviderCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
 const SUIDP_NAME = "SuperUserAdmin";

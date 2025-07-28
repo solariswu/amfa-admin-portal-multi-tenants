@@ -50,7 +50,8 @@ export const createPostDeploymentLambda = (
                         'cognito-idp:SetUICustomization',
                         'cognito-idp:AdminCreateUser',
                         'cognito-idp:DescribeUserPool',
-						'cognito-idp:UpdateUserPool'
+						'cognito-idp:UpdateUserPool',
+                        'cognito-idp:CreateIdentityProvider'
                     ],
                     resources: [`arn:aws:cognito-idp:${stage_config[current_stage].env.region}:*:userpool/${adminPoolId}`],
                 }),
