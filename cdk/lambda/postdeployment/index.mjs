@@ -32,7 +32,7 @@ const switchUserpoolTierToLite = async (UserPoolId) => {
 
     if (userPool.UserPoolTier === "LITE") {
       console.log("admin userpool tier is LITE already");
-      return;
+      return userPool.Domain;
     }
 
     userPool.UserPoolTier = "LITE";
@@ -54,6 +54,8 @@ const switchUserpoolTierToLite = async (UserPoolId) => {
     console.error("switch userpool tier failed with:", error);
     console.error("RequestId: " + error.requestId);
   }
+
+  return null;
 };
 
 const customiseUserpoolLogin = async (UserPoolId, ClientId) => {
