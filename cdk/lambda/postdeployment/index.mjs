@@ -49,7 +49,7 @@ const switchUserpoolTierToLite = async (UserPoolId) => {
 
     await cognito.send(new UpdateUserPoolCommand(param));
 
-    return userPool.DomainName;
+    return userPool.Domain;
   } catch (error) {
     console.error("switch userpool tier failed with:", error);
     console.error("RequestId: " + error.requestId);
