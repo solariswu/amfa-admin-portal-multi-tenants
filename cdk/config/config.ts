@@ -11,13 +11,6 @@ export const amfa_api_base = process.env.TENANT_ID + '.' + process.env.ROOT_DOMA
 
 export const suapi_endpoint = 'https://api.su.apersona-id.com/register/'
 
-export const oidc_info = {
-	isNeeded: false,
-	issuerUrl: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_edJFzXt7B',
-	clientSecret: 'fill-later',
-	clientId: '56abvnbvlgiaa9lgnbcaule3em',
-}
-
 export const stage_config = {
 	dev: {
 		env: {

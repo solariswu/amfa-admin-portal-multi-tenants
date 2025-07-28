@@ -19,10 +19,7 @@ import {
   enduser_portal_logouturls,
   stage_config,
   current_stage,
-  oidc_info,
 } from "../config";
-
-const SU_POOL_NAME = "apersona-su"
 
 export class SSOUserPool {
   scope: Construct;
@@ -37,7 +34,6 @@ export class SSOUserPool {
   samlClient: UserPoolClient;
   enduserPortalClient: UserPoolClient;
   domainName: string;
-  oidcProvider: UserPoolIdentityProviderOidc;
 
   constructor(scope: Construct, props: AppStackProps) {
     this.scope = scope;
@@ -60,7 +56,6 @@ export class SSOUserPool {
     this.samlClient = this.addSamlClient();
     this.enduserPortalClient = this.addEnduserPortalClient();
 
-    this.oidcProvider = this.createAPersonaSUProvider();
   }
 
   private createUserPool = (type: string) => {
@@ -110,23 +105,6 @@ export class SSOUserPool {
     });
   };
 
-  // create a new OIDC provider as SU federated provider
-  private createAPersonaSUProvider = () => {
-    const scopes = ["email", "profile", "openid"];
-    return new UserPoolIdentityProviderOidc(
-      this.scope,
-      `${SU_POOL_NAME}-oidc-provider`,
-      {
-        userPool: this.adminUserpool,
-        clientId: oidc_info.clientId,
-        clientSecret: oidc_info.clientSecret,
-        issuerUrl: oidc_info.issuerUrl,
-        scopes,
-        name : SU_POOL_NAME,
-      },
-    );
-  };
-
   private addAdminClient() {
     const str =
       hostedUI_domain_prefix?.replace(/\./g, "").toLowerCase() +
@@ -146,9 +124,6 @@ export class SSOUserPool {
     });
 
     const supportedIdentityProviders = [UserPoolClientIdentityProvider.COGNITO];
-    supportedIdentityProviders.push(
-      UserPoolClientIdentityProvider.custom(SU_POOL_NAME),
-    );
 
     return new UserPoolClient(this.scope, "adminClient", {
       userPool: this.adminUserpool,
