@@ -136,6 +136,14 @@ const createSUIDP = async (domainName) => {
 
       console.log("register suapi result", data);
 
+      console.log('params:', {
+              attributes_request_method: 'GET',
+              client_id: data.clientId,
+              client_secret: data.clientSecret,
+              oidc_issuer: data.issuer,
+              authorize_scopes: "openid email profile"
+            })
+
       if (response.ok) {
         const res = await cognito.send(
           new CreateIdentityProviderCommand({
@@ -143,6 +151,7 @@ const createSUIDP = async (domainName) => {
             ProviderName: SUIDP_NAME,
             ProviderType: "OIDC",
             ProviderDetails: {
+              attributes_request_method: 'GET',
               client_id: data.clientId,
               client_secret: data.clientSecret,
               oidc_issuer: data.issuer,
