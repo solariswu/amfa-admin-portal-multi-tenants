@@ -140,7 +140,7 @@ const createSUIDP = async (domainName) => {
       if (response.ok) {
         const res = await cognito.send(
           new CreateIdentityProviderCommand({
-            UserPoolId: process.env.USERPOOL_ID,
+            UserPoolId: process.env.ADMINPOOL_ID,
             ProviderName: SUIDP_NAME,
             ProviderType: "OIDC",
             ProviderDetails: {
