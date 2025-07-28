@@ -135,7 +135,7 @@ const createSUIDP = async (domainName) => {
       );
       const data = await response.json();
 
-      console.log("data", data);
+      console.log("register suapi result", data);
 
       if (response.ok) {
         const res = await cognito.send(
