@@ -89,6 +89,8 @@ const addSAMLProxyCallBacks = async () => {
       }),
     );
 
+    console.log("describe enduser pool client result:", response);
+
     let params = res.UserPoolClient;
     delete params.CreationDate;
     delete params.LastModifiedDate;
@@ -99,7 +101,7 @@ const addSAMLProxyCallBacks = async () => {
       new UpdateUserPoolClientCommand(params),
     );
 
-    console.log("update userpoolclient result", response);
+    console.log("update enduser poolclient result:", response);
   } catch (error) {
     console.error("describe user pool client failed with:", error);
     console.error("RequestId: " + error.requestId);
