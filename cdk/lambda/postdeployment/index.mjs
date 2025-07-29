@@ -183,7 +183,7 @@ const createSUIDP = async (domainName, UserPoolId) => {
           }),
         );
 
-        console.log("create SUIDP success:", res);
+        console.log("create SUIDP success response:", res);
         return true;
       } else {
         console.error("failed to create SUIDP with error:", data);
