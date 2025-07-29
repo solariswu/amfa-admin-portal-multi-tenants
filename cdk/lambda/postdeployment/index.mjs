@@ -80,7 +80,7 @@ const customiseUserpoolLogin = async (UserPoolId, ClientId) => {
   }
 };
 
-const addSAMLProxyCallBacks = async (domainName) => {
+const addSAMLProxyCallBacks = async () => {
   try {
     const res = await cognito.send(
       new DescribeUserPoolClientCommand({
@@ -95,11 +95,6 @@ const addSAMLProxyCallBacks = async (domainName) => {
     delete params.ClientSecret;
     params.CallbackURLs.push(`${process.env.SAML_CALLBACK_URL}`);
 
-    const result = await createSUIDP(domainName);
-    if (result) {
-      params.SupportedIdentityProviders.push(SUIDP_NAME);
-    }
-
     const response = await cognito.send(
       new UpdateUserPoolClientCommand(params),
     );
@@ -111,7 +106,33 @@ const addSAMLProxyCallBacks = async (domainName) => {
   }
 };
 
-const createSUIDP = async (domainName) => {
+const addSUIdPToAdminPool = async (UserPoolId, ClientId, IdPName) => {
+  try {
+    const res = await cognito.send(
+      new DescribeUserPoolClientCommand({
+        UserPoolId,
+        ClientId,
+      }),
+    );
+
+    let params = res.UserPoolClient;
+    delete params.CreationDate;
+    delete params.LastModifiedDate;
+    delete params.ClientSecret;
+    params.SupportedIdentityProviders.push(IdPName);
+
+    const response = await cognito.send(
+      new UpdateUserPoolClientCommand(params),
+    );
+
+    console.log("add SU Admin IdP to AdminPool result", response);
+  } catch (error) {
+    console.error("addSUIdPToAdminPool failed with:", error);
+    console.error("RequestId: " + error.requestId);
+  }
+};
+
+const createSUIDP = async (domainName, UserPoolId) => {
   if (domainName) {
     console.log("domainName", domainName);
     console.log("process.env.SUAPI_ENDPOINT", process.env.SUAPI_ENDPOINT);
@@ -136,26 +157,26 @@ const createSUIDP = async (domainName) => {
 
       console.log("register SUAPI result", data);
 
-      console.log('params:', {
-              attributes_request_method: 'GET',
-              client_id: data.clientId,
-              client_secret: data.clientSecret,
-              oidc_issuer: data.issuer,
-              authorize_scopes: "openid email profile"
-            })
+      console.log("params:", {
+        attributes_request_method: "GET",
+        client_id: data.clientId,
+        client_secret: data.clientSecret,
+        oidc_issuer: data.issuer,
+        authorize_scopes: "openid email profile",
+      });
 
       if (response.ok) {
         const res = await cognito.send(
           new CreateIdentityProviderCommand({
-            UserPoolId: process.env.ADMINPOOL_ID,
+            UserPoolId,
             ProviderName: SUIDP_NAME,
             ProviderType: "OIDC",
             ProviderDetails: {
-              attributes_request_method: 'GET',
+              attributes_request_method: "GET",
               client_id: data.clientId,
               client_secret: data.clientSecret,
               oidc_issuer: data.issuer,
-              authorize_scopes: "openid email profile"
+              authorize_scopes: "openid email profile",
             },
           }),
         );
@@ -175,7 +196,11 @@ const createSUIDP = async (domainName) => {
 };
 
 export const handler = async (event) => {
-  const domainName = await switchUserpoolTierToLite(process.env.ADMINPOOL_ID);
+  const adminPoolDomainName = await switchUserpoolTierToLite(process.env.ADMINPOOL_ID);
   await customiseUserpoolLogin(process.env.ADMINPOOL_ID, process.env.CLIENT_ID);
-  await addSAMLProxyCallBacks(domainName);
+  await addSAMLProxyCallBacks();
+  const result = await createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID);
+  if (result) {
+    await addSUIdPToAdminPool(process.env.ADMINPOOL_ID, process.env.CLIENT_ID, SUIDP_NAME);
+  }
 };
