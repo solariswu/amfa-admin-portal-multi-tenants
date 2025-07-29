@@ -125,7 +125,7 @@ const addSUIdPToAdminPool = async (UserPoolId, ClientId, IdPName) => {
       new UpdateUserPoolClientCommand(params),
     );
 
-    console.log("add SU Admin IdP to AdminPool result", response);
+    console.log("add SU Admin IdP to AdminPool result:", response);
   } catch (error) {
     console.error("addSUIdPToAdminPool failed with:", error);
     console.error("RequestId: " + error.requestId);
