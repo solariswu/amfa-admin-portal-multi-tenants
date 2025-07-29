@@ -209,4 +209,5 @@ export const handler = async (event) => {
     process.env.CLIENT_ID,
     SUIDP_NAME,
   );
+  console.log("post deployment success");
 };
