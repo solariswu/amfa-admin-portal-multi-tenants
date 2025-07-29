@@ -184,7 +184,7 @@ const createSUIDP = async (domainName, UserPoolId) => {
         console.log("create SUIDP success:", res);
         return true;
       } else {
-        console.error("failed to create SUIDP", data);
+        console.error("failed to create SUIDP with error:", data);
       }
     } catch (error) {
       console.error("describe user pool client failed with:", error);
