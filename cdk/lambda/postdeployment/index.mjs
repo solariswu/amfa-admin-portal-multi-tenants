@@ -27,7 +27,7 @@ const switchUserpoolTierToLite = async (UserPoolId) => {
     const userPool = describeUserPoolRes.UserPool;
 
     if (!userPool) {
-      throw new Error("UserPool not found");
+      throw new Error("UserPool not found:", UserPoolId);
     }
 
     if (userPool.UserPoolTier === "LITE") {
