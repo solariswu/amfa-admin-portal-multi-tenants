@@ -136,7 +136,7 @@ const addSUIdPToAdminPool = async (UserPoolId, ClientId, IdPName) => {
 
 const createSUIDP = async (domainName, UserPoolId) => {
   if (domainName) {
-    console.log("registering domainName to super admin api", domainName);
+    console.log("registering domainName to super admin api:", domainName);
     console.log("process.env.SUAPI_ENDPOINT", process.env.SUAPI_ENDPOINT);
 
     try {
