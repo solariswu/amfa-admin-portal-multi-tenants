@@ -196,11 +196,15 @@ const createSUIDP = async (domainName, UserPoolId) => {
 };
 
 export const handler = async (event) => {
-  const adminPoolDomainName = await switchUserpoolTierToLite(process.env.ADMINPOOL_ID);
+  const adminPoolDomainName = await switchUserpoolTierToLite(
+    process.env.ADMINPOOL_ID,
+  );
   await customiseUserpoolLogin(process.env.ADMINPOOL_ID, process.env.CLIENT_ID);
   await addSAMLProxyCallBacks();
-  const result = await createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID);
-  if (result) {
-    await addSUIdPToAdminPool(process.env.ADMINPOOL_ID, process.env.CLIENT_ID, SUIDP_NAME);
-  }
+  await createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID);
+  await addSUIdPToAdminPool(
+    process.env.ADMINPOOL_ID,
+    process.env.CLIENT_ID,
+    SUIDP_NAME,
+  );
 };
