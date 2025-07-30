@@ -173,6 +173,10 @@ const createSUIDP = async (domainName, UserPoolId) => {
             UserPoolId,
             ProviderName: SUIDP_NAME,
             ProviderType: "OIDC",
+            AttributeMapping: {
+              email: "email",
+              email_verified: "email_verified",
+            },
             ProviderDetails: {
               attributes_request_method: "GET",
               client_id: data.clientId,
