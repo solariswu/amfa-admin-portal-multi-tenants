@@ -723,6 +723,31 @@ export class SSOApiGateway {
     private getPolicyStatements(userPoolArn: string, resourceType: string, isList: boolean) {
         const statements: PolicyStatement[] = [];
         const actions = {
+            admins: {
+                normal: [
+                    'cognito-idp:AdminGetUser',
+                    'cognito-idp:AdminDeleteUser',
+                    'cognito-idp:AdminUpdateUserAttributes',
+                    'cognito-idp:AdminListGroupsForUser',
+                    'cognito-idp:AdminAddUserToGroup',
+                    'cognito-idp:AdminRemoveUserFromGroup',
+                    'cognito-idp:AdminSetUserMFAPreference',
+                    'cognito-idp:ListIdentityProviders',
+                    'cognito-idp:AdminDisableUser',
+                    'cognito-idp:AdminEnableUser',
+                    'cognito-idp:AdminResetUserPassword',
+                ],
+                list: [
+                    'cognito-idp:DescribeUserPool',
+                    'cognito-idp:ListUsers',
+                    'cognito-idp:AdminCreateUser',
+                    'cognito-idp:AdminListGroupsForUser',
+                    'cognito-idp:ListIdentityProviders',
+                    'cognito-idp:AdminAddUserToGroup',
+                    'cognito-idp:AdminSetUserMFAPreference',
+                    'cognito-idp:AdminLinkProviderForUser',
+                    'cognito-idp:ListUsersInGroup',]
+            },
             users: {
                 normal: [
                     'cognito-idp:AdminGetUser',
