@@ -78,7 +78,7 @@ export const App = () => (
       <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />
       <Resource options={{ label: 'Settings' }} name="tenants" {...tenants} />
       <Resource options={{ label: 'Brandings'}} name="brandings" {...brandings} />
-      <Resource options={{ label: 'Admin'}} name="admin" {...admins} />
+      <Resource options={{ label: 'Admin'}} name="admins" {...admins} />
       {/* <CustomRoutes>
         <Route path="/user/import" element={<UserImport />} />
       </CustomRoutes> */}
