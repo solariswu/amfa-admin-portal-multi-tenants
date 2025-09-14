@@ -14,6 +14,7 @@ import samls from "./samls";
 import importuser from './importusers';
 import tenants from "./tenants";
 import brandings from "./brandings";
+import admins from "./admins";
 
 import authProvider from "./Component/authProvider/authProvider";
 import LoginPage from "./Component/authProvider/LoginPage";
@@ -70,13 +71,14 @@ export const App = () => (
       i18nProvider={i18nProvider}
       requireAuth={true}
       >
-      <Resource name="users" {...users} />"
-      <Resource options={{ label: 'User Import' }} name="importusers" {...importuser} />"
-      <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />"
-      <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />"
-      <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />"
-      <Resource options={{ label: 'Settings' }} name="tenants" {...tenants} />"
-      <Resource options={{ label: 'Brandings'}} name="brandings" {...brandings} />"
+      <Resource name="users" {...users} />
+      <Resource options={{ label: 'User Import' }} name="importusers" {...importuser} />
+      <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />
+      <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
+      <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />
+      <Resource options={{ label: 'Settings' }} name="tenants" {...tenants} />
+      <Resource options={{ label: 'Brandings'}} name="brandings" {...brandings} />
+      <Resource options={{ label: 'Admin'}} name="admin" {...admins} />
       {/* <CustomRoutes>
         <Route path="/user/import" element={<UserImport />} />
       </CustomRoutes> */}

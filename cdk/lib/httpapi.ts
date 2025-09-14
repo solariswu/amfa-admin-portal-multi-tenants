@@ -26,7 +26,6 @@ export class SSOApiGateway {
     scope: Construct;
     region: string | undefined;
     account: string | undefined;
-    userPoolId: string;
     api: HttpApi;
     certificateArn: string;
     domainName: string;
@@ -56,7 +55,7 @@ export class SSOApiGateway {
         this.createHttpApi();
     }
 
-    private createImportUsersWorkerLambda = (userPoolId) => {
+    private createImportUsersWorkerLambda = (userPoolId : string) => {
         const workerlambda = new Function(this.scope, 'importusersworkerlambda', {
             functionName: `${project_name}-importusersworker-${this.region}`,
             runtime: Runtime.NODEJS_20_X,
@@ -268,9 +267,9 @@ export class SSOApiGateway {
     }
 
     public createAdminApiEndpoints(userPoolId: string, samlClientId: string, samlClientSecrect: string,
-        spPortalClientId: string, userPoolDomain: string
+        spPortalClientId: string, userPoolDomain: string, adminUserPoolId: string
     ) {
-        const resourceTypes = ['users', 'groups', 'idps', 'appclients', 'importusers'];
+        const resourceTypes = ['users', 'groups', 'idps', 'appclients', 'importusers', 'admins'];
 
         this.imoprtUsersJobsS3Bucket = new Bucket(this.scope, `${project_name}-${this.region}-${current_stage}-ImportUsersBucket`, {
                 bucketName: `${this.account}-${this.region}-${project_name}-importusersjobs`,
@@ -280,11 +279,13 @@ export class SSOApiGateway {
 
         this.importUsersWorkerLambda = this.createImportUsersWorkerLambda(userPoolId);
 
+
         resourceTypes.forEach(resourceType => {
+            const poolId = resourceType == 'admin' ? adminUserPoolId : userPoolId;
             const lambdaList = this.createLambda(
                 `${resourceType}list`,
-                userPoolId,
-                this.getPolicyStatements(this.userPoolIdToArn(userPoolId), resourceType, true)
+                poolId ,
+                this.getPolicyStatements(this.userPoolIdToArn(poolId), resourceType, true)
             );
             // 👇 add route for GET /resource
             this.api.addRoutes({
@@ -298,8 +299,8 @@ export class SSOApiGateway {
             });
             const lambda = this.createLambda(
                 `${resourceType}`,
-                userPoolId,
-                this.getPolicyStatements(this.userPoolIdToArn(userPoolId), resourceType, false)
+                poolId,
+                this.getPolicyStatements(this.userPoolIdToArn(poolId), resourceType, false)
             );
             // 👇 add route for CRUD /resource/id
             this.api.addRoutes({

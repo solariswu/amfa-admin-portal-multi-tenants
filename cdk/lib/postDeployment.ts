@@ -19,7 +19,7 @@ export const createPostDeploymentLambda = (
 
     const lambdaName = 'postdeployment';
     const initLambda = new TriggerFunction(scope, 'CDKPostDeploymentLambda', {
-        runtime: Runtime.NODEJS_20_X,
+        runtime: Runtime.NODEJS_22_X,
         handler: 'index.handler',
         code: Code.fromAsset(path.join(__dirname + `/../lambda/${lambdaName}`)),
         environment: {
@@ -48,12 +48,12 @@ export const createPostDeploymentLambda = (
                 new PolicyStatement({
                     actions: [
                         'cognito-idp:SetUICustomization',
-                        'cognito-idp:AdminCreateUser',
                         'cognito-idp:DescribeUserPool',
 						'cognito-idp:UpdateUserPool',
                         'cognito-idp:CreateIdentityProvider',
                         'cognito-idp:DescribeUserPoolClient',
-                        'cognito-idp:UpdateUserPoolClient'
+                        'cognito-idp:UpdateUserPoolClient',
+                        'cognito-idp:AdminCreateUser',
                     ],
                     resources: [`arn:aws:cognito-idp:${stage_config[current_stage].env.region}:*:userpool/${adminPoolId}`],
                 }),
