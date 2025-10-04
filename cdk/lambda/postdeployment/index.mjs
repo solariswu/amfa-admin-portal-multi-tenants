@@ -206,7 +206,7 @@ const createGroups = async (tenantId) => {
   const promises = groups.map((group) =>
     cognito.send(
       new CreateGroupCommand({
-        UserPoolId: process.env.ADMINPOOL_ID,
+        UserPoolId: process.env.USERPOOL_ID,
         GroupName: group,
       }),
     ),
