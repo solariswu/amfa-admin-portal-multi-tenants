@@ -201,17 +201,50 @@ const createSUIDP = async (domainName, UserPoolId) => {
   return false;
 };
 
+const createGroups = async (tenantId) => {
+  const groups = ["SA", `TA_${tenantId}`];
+  const promises = groups.map((group) =>
+    cognito.send(
+      new CreateGroupCommand({
+        UserPoolId: process.env.ADMINPOOL_ID,
+        GroupName: group,
+      }),
+    ),
+  );
+
+  const results = await Promise.allSettled(promises);
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      console.error("create group failed with:", result.reason);
+      console.error("RequestId: " + result.reason.requestId);
+    }
+  });
+};
+
 export const handler = async (event) => {
   const adminPoolDomainName = await switchUserpoolTierToLite(
     process.env.ADMINPOOL_ID,
   );
-  await customiseUserpoolLogin(process.env.ADMINPOOL_ID, process.env.CLIENT_ID);
-  await addSAMLProxyCallBacks();
-  await createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID);
+
+  const results = await Promise.allSettled([
+    customiseUserpoolLogin(process.env.USERPOOL_ID, process.env.CLIENT_ID),
+    addSAMLProxyCallBacks(),
+    createGroups(process.env.TENANT_ID),
+    createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID),
+  ]);
+
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      console.error("post deployment failed with:", result.reason);
+      console.error("RequestId: " + result.reason.requestId);
+    }
+  });
+
   await addSUIdPToAdminPool(
     process.env.ADMINPOOL_ID,
     process.env.CLIENT_ID,
     SUIDP_NAME,
   );
+
   console.log("post deployment success");
 };
