@@ -6,6 +6,7 @@ import {
   DescribeUserPoolCommand,
   UpdateUserPoolCommand,
   CreateIdentityProviderCommand,
+  CreateGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
 const SUIDP_NAME = "SuperUserAdmin";
@@ -89,7 +90,7 @@ const addSAMLProxyCallBacks = async () => {
       }),
     );
 
-    console.log("describe enduser pool client result:", response);
+    console.log("describe enduser pool client result:", res);
 
     let params = res.UserPoolClient;
     delete params.CreationDate;
@@ -206,7 +207,7 @@ const createGroups = async (tenantId) => {
   const promises = groups.map((group) =>
     cognito.send(
       new CreateGroupCommand({
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: process.env.ADMINPOOL_ID,
         GroupName: group,
       }),
     ),
@@ -227,7 +228,7 @@ export const handler = async (event) => {
   );
 
   const results = await Promise.allSettled([
-    customiseUserpoolLogin(process.env.USERPOOL_ID, process.env.CLIENT_ID),
+    customiseUserpoolLogin(process.env.ADMINPOOL_ID, process.env.CLIENT_ID),
     addSAMLProxyCallBacks(),
     createGroups(process.env.TENANT_ID),
     createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID),
