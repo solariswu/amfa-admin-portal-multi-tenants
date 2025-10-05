@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+
 
 import {
-  Button,
   List,
   Datagrid,
   ArrayField,
@@ -16,11 +15,9 @@ import {
   FilterButton,
   useGetList,
   SelectInput,
-  WrapperField,
 } from "react-admin";
-import { InputAdornment, IconButton, Chip, Box } from "@mui/material";
+import { InputAdornment, IconButton } from "@mui/material";
 import { Search } from "@mui/icons-material";
-import PublishIcon from "@mui/icons-material/Publish";
 import UserListMenu from "./AdminListMenu";
 
 import awsmobile from "../aws-export";
@@ -28,35 +25,18 @@ import awsmobile from "../aws-export";
 const apiUrl = awsmobile.aws_backend_api_url;
 
 export const AdminList = (props) => {
-  const [configData, setConfigData] = useState(null);
 
-  const { data: groups } = useGetList("groups", {
+  const { data: admingroups } = useGetList("admingroups", {
     pagination: { page: 1, perPage: 60 },
     sort: { field: "createdAt", order: "DESC" },
   });
 
-  useEffect(() => {
-    const fetchFeConfigs = async () => {
-      let response = await fetch(`${apiUrl}/amfaconfig`, {
-        headers: {
-          Authorization: localStorage.getItem("token"),
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-      });
-      let data = await response.json();
-      setConfigData(data);
-    };
-
-    fetchFeConfigs();
-  }, []);
-
-  const groupChoices = groups
+  const groupChoices = admingroups
     ? groups.map((item) => ({ id: item.id, name: item.group }))
     : [];
   const usersFilter = [
     <SelectInput
-      label="Search Users with group"
+      label="Search Admin with Roles"
       source="groups"
       choices={groupChoices}
     />,
@@ -113,124 +93,8 @@ export const AdminList = (props) => {
     return (
       <TopToolbar>
         <FilterButton filters={usersFilter} disableSaveQuery />
-        <CreateButton label="Invite User" />
-        <Button onClick={handleClick} label="Import">
-          <PublishIcon />
-        </Button>
+        <CreateButton label="Invite Admin" />
       </TopToolbar>
-    );
-  };
-
-  const getUserGroup = (groups) => {
-    let ug = "default";
-    let ugRank = 10000;
-
-    if (!groups?.length) {
-      return ug;
-    }
-
-    for (let i = 0; i < groups.length; i++) {
-      const groupName = groups[i].toLowerCase();
-      if (
-        configData?.amfaPolicies[groupName] &&
-        configData?.amfaPolicies[groupName].rank < ugRank
-      ) {
-        ug = groupName;
-        ugRank = configData?.amfaPolicies[groupName].rank;
-      }
-    }
-
-    if (!configData?.amfaPolicies[ug]) {
-      ug = "default";
-    }
-
-    return ug;
-  };
-
-  const intersectOtpPolicies = (
-    usergroupPolicies,
-    amfaConfigsMasterPolicies
-  ) => {
-    if (!amfaConfigsMasterPolicies) {
-      return usergroupPolicies ? usergroupPolicies : [];
-    }
-
-    let intersection = usergroupPolicies.filter((policy) =>
-      amfaConfigsMasterPolicies.includes(policy)
-    );
-
-    if (!intersection || !intersection.length) {
-      intersection = ["e"];
-    }
-
-    if (!intersection.includes("e")) {
-      intersection.push("e");
-    }
-
-    return intersection;
-  };
-
-  const MFAChannels = ({ record }) => {
-    if (!configData?.amfaConfigs) {
-      return null;
-    }
-
-    const masterMFAs = configData?.amfaConfigs?.master_additional_otp_methods;
-    let ug = getUserGroup(record.groups);
-
-    const availableMFAs = intersectOtpPolicies(
-      configData?.amfaPolicies[ug]?.permissions,
-      masterMFAs
-    );
-
-    if (!availableMFAs?.length) {
-      return null;
-    }
-
-    let userMfaSetup = ["e"];
-    availableMFAs.forEach((mfa) => {
-      switch (mfa) {
-        case "ae":
-          if (record["alter-email"]) {
-            userMfaSetup.push(mfa);
-          }
-          break;
-        case "s":
-          if (record.phone_number) {
-            userMfaSetup.push(mfa);
-          }
-          break;
-        case "v":
-          if (record["voice-number"]) {
-            userMfaSetup.push(mfa);
-          }
-          break;
-        case "t":
-          if (record.hasMobileToken) {
-            userMfaSetup.push(mfa);
-          }
-          break;
-        case "mp":
-          if (record.hasPushNotification) {
-            userMfaSetup.push(mfa);
-          }
-          break;
-        default:
-          break;
-      }
-    });
-
-    return (
-      <WrapperField label="MFA Channels">
-        {availableMFAs.map((mfa) => (
-          <Chip
-            label={mfa.toUpperCase()}
-            key={mfa}
-            color={userMfaSetup.includes(mfa) ? "info" : "default"}
-            size="small"
-          />
-        ))}
-      </WrapperField>
     );
   };
 
@@ -247,7 +111,7 @@ export const AdminList = (props) => {
           rowClick={false}
           bulkActionButtons={false}
           optimized
-          key={configData}
+          // key={configData}
         >
           <TextField
             source="email"
@@ -263,13 +127,7 @@ export const AdminList = (props) => {
             }
           />
           <TextField label="Location/Address" source="locale" sortable={false} />
-          <FunctionField
-            label="MFA Channels"
-            render={(record) => (
-              <MFAChannels record={record} key={configData} />
-            )}
-          />
-          <ArrayField label="User Group" source="groups" sortable={false}>
+          <ArrayField label="Admin Type" source="groups" sortable={false}>
             <SingleFieldList>
               <FunctionField
                 render={(record) => {
@@ -298,12 +156,12 @@ export const AdminList = (props) => {
           />
         </Datagrid>
       </List>
-      {configData && (
+      {/* {configData && (
         <Box display="flex" alignItems={"end"}>
           <Box>Total Users: </Box>
           <Box pl={2}> {configData?.totalUserNumber} </Box>
         </Box>
-      )}
+      )} */}
     </div>
   );
 };

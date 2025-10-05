@@ -9,7 +9,7 @@ export default function AdminListMenu({ record }) {
     const [anchorEl, setAnchorEl] = React.useState(null);
     const [confirmType, setConfirmType] = React.useState(null);
     const [deleteOne, { isLoading: isDeleting }] = useDelete(
-        'users',
+        'admins',
         { id: record.id, previousData: record }
     );
 
@@ -52,13 +52,13 @@ export default function AdminListMenu({ record }) {
         switch (type) {
             case 'disable':
                 update(
-                    'users',
+                    'admins',
                     { id: record.id, data: { ...record, enabled: false }, previousData: record }
                 );
                 break;
             case 'enable':
                 update(
-                    'users',
+                    'admins',
                     { id: record.id, data: { ...record, enabled: true }, previousData: record }
                 );
                 break;
@@ -67,7 +67,7 @@ export default function AdminListMenu({ record }) {
                 break;
             case 'reset':
                 update(
-                    'users',
+                    'admins',
                     { id: record.id, data: { ...record, resetpassword: true }, previousData: record }
                 )
                 break;
@@ -111,7 +111,7 @@ export default function AdminListMenu({ record }) {
             >
                 <MenuItem disabled={true} sx={{ color: 'text.primary', fontWeight: 'medium' }}>{record.email}</MenuItem>
                 <MenuItem onClick={() => {
-                    redirect(`/users/${record.id}`);
+                    redirect(`/admins/${record.id}`);
                 }}>Edit</MenuItem>
                 <MenuItem onClick={() => handle(record.enabled ? 'disable' : 'enable')}>{record.enabled ? "Disable" : "Enable"}</MenuItem>
                 <MenuItem onClick={() => handle('delete')}>Delete</MenuItem>

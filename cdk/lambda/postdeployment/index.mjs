@@ -203,7 +203,7 @@ const createSUIDP = async (domainName, UserPoolId) => {
 };
 
 const createGroups = async (tenantId) => {
-  const groups = ["SA", `TA_${tenantId}`];
+  const groups = ["SA", "SPA", `TA_${tenantId}`];
   const promises = groups.map((group) =>
     cognito.send(
       new CreateGroupCommand({

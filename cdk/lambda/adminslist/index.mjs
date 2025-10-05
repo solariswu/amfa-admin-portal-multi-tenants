@@ -9,6 +9,7 @@ import {
 
 import postResData from "./post.mjs";
 import getResData from "./get.mjs";
+import { parse } from "path";
 
 const cognitoISP = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION,
@@ -100,100 +101,184 @@ export const handler = async (event) => {
       }
       const limit = parseInt(event.queryStringParameters.perPage);
 
-      if (Object.keys(filter).includes("groups")) {
-        do {
-          params = {
-            UserPoolId: process.env.USERPOOL_ID,
-            Limit: limit - listUsersData.Users.length, // Number of users to display per page
-            GroupName: filter["groups"],
-            ...(PaginationToken && { NextToken: PaginationToken }),
-          };
+      // get user group info from jwt
+      const jwt = event.headers["authorization"].split(" ")[1];
+      const jwtBase64Url = jwt.split(".")[1];
 
-          usersData = await cognitoISP.send(
-            new ListUsersInGroupCommand(params),
+      const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const jwtBuffer = Buffer.from(jwtBase64, "base64");
+
+      const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
+      //get userpool id
+      const oidc_issuer = jwtPayload["issuer"].split("/").pop();
+
+      let roles = jwtPayload["cognito:groups"].split(",");
+      console.log("jwtPayload", jwtPayload);
+      console.log("roles got", roles);
+
+      if (roles.includes("SPA")) {
+        roles = ["SPA"];
+      }
+      if (roles.includes("SA")) {
+        roles = ["SA"];
+      }
+
+      if (roles[0] === "SPA" || roles[0] === "SA") {
+        if (Object.keys(filter).includes("groups") && filter["groups"] !== "") {
+          if (roles[0] === "SPA" && filter["groups"] === "SA") {
+            console.log("user is not authorized to access the group");
+            return {
+              statusCode: 403,
+              headers: {
+                "Access-Control-Allow-Headers":
+                  "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
+                "Access-Control-Expose-Headers": "Content-Range",
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Credentials": true,
+              },
+              body: JSON.stringify({
+                data: [],
+                pageInfo: {
+                  hasPreviousPage: false,
+                  hasNextPage: false,
+                },
+                PaginationToken: null,
+              }),
+            };
+          }
+
+          do {
+            params = {
+              UserPoolId: process.env.USERPOOL_ID,
+              Limit: limit - listUsersData.Users.length, // Number of users to display per page
+              GroupName: filter["groups"],
+              ...(PaginationToken && { NextToken: PaginationToken }),
+            };
+
+            usersData = await cognitoISP.send(
+              new ListUsersInGroupCommand(params),
+            );
+            listUsersData.Users = listUsersData.Users
+              ? [...listUsersData.Users, ...usersData.Users]
+              : usersData.Users;
+            PaginationToken = usersData.NextToken;
+            if (usersData?.Users.length > 0) {
+              loopCount = 0;
+            } else {
+              loopCount++;
+            }
+          } while (
+            PaginationToken &&
+            loopCount < 20 &&
+            limit - listUsersData.Users.length > 0
           );
-          listUsersData.Users = listUsersData.Users
-            ? [...listUsersData.Users, ...usersData.Users]
-            : usersData.Users;
-          PaginationToken = usersData.NextToken;
-          if (usersData?.Users.length > 0) {
-            loopCount = 0
+          usersCount = listUsersData.Users.length;
+        } else {
+          // Get total count of user
+          const describeData = await cognitoISP.send(
+            new DescribeUserPoolCommand({
+              UserPoolId: process.env.USERPOOL_ID,
+            }),
+          );
+          console.log("describeUserpool result", describeData);
+          usersCount = describeData.UserPool.EstimatedNumberOfUsers;
+
+          if (Object.keys(filter).includes("given_name")) {
+            filterString = 'given_name ^= "' + filter["given_name"] + '"';
           }
-          else  {
-            loopCount ++;
+
+          if (Object.keys(filter).includes("family_name")) {
+            filterString = 'family_name ^= "' + filter["family_name"] + '"';
           }
-        } while (
-          PaginationToken &&
-          loopCount < 20 &&
-          limit - listUsersData.Users.length > 0
-        );
-        usersCount = listUsersData.Users.length;
+
+          if (Object.keys(filter).includes("email")) {
+            filterString = 'email ^= "' + filter["email"] + '"';
+          }
+
+          console.log("filterString", filterString);
+          console.log("filter", filter);
+          //Saving the Pagination token for each page in obj
+
+          do {
+            params = {
+              UserPoolId: process.env.USERPOOL_ID,
+              Limit: limit - listUsersData.Users.length, // No of users to display per page
+              ...(PaginationToken && { PaginationToken: PaginationToken }), // tokens[1] contain the token query for page 1.
+              ...(filterString && { Filter: filterString }),
+            };
+
+            console.info("params", params);
+
+            usersData = await cognitoISP.send(new ListUsersCommand(params));
+            console.log("listUser result", usersData.Users);
+            listUsersData.Users = listUsersData.Users
+              ? [...listUsersData.Users, ...usersData.Users]
+              : usersData.Users;
+            // If no remaining users are there, no paginationToken is returned from cognito
+            PaginationToken = usersData.PaginationToken;
+            if (usersData?.Users.length > 0) {
+              loopCount = 0;
+            } else {
+              loopCount++;
+            }
+
+            console.log(
+              "usersData",
+              usersData,
+              "users.length",
+              usersData.Users.length,
+            );
+            console.log(
+              "listUsersData",
+              listUsersData,
+              "listUsersData.Users.length",
+              listUsersData.Users.length,
+            );
+          } while (
+            PaginationToken &&
+            loopCount < 20 &&
+            limit - listUsersData.Users.length > 0
+          );
+        }
       } else {
-        // Get total count of user
-        const describeData = await cognitoISP.send(
-          new DescribeUserPoolCommand({
-            UserPoolId: process.env.USERPOOL_ID,
-          }),
-        );
-        console.log("describeUserpool result", describeData);
-        usersCount = describeData.UserPool.EstimatedNumberOfUsers;
+        // iterate roles against the user roles value, list each group users of that role.
+        PaginationToken = null;
+        const page = parseInt(event.queryStringParameters.page);
+        const perPage = parseInt(event.queryStringParameters.perPage);
+        for (let i = 0; i < roles.length; i++) {
+          do {
+            params = {
+              UserPoolId: process.env.USERPOOL_ID,
+              Limit: 60, // Number of users to display per page
+              GroupName: roles[i],
+              ...(PaginationToken && { NextToken: PaginationToken }),
+            };
 
-        if (Object.keys(filter).includes("given_name")) {
-          filterString = 'given_name ^= "' + filter["given_name"] + '"';
-        }
-
-        if (Object.keys(filter).includes("family_name")) {
-          filterString = 'family_name ^= "' + filter["family_name"] + '"';
-        }
-
-        if (Object.keys(filter).includes("email")) {
-          filterString = 'email ^= "' + filter["email"] + '"';
-        }
-
-        console.log("filterString", filterString);
-        console.log("filter", filter);
-        //Saving the Pagination token for each page in obj
-
-        do {
-          params = {
-            UserPoolId: process.env.USERPOOL_ID,
-            Limit: limit - listUsersData.Users.length, // No of users to display per page
-            ...(PaginationToken && { PaginationToken: PaginationToken }), // tokens[1] contain the token query for page 1.
-            ...(filterString && { Filter: filterString }),
-          };
-
-          console.info("params", params);
-
-          usersData = await cognitoISP.send(new ListUsersCommand(params));
-          console.log("listUser result", usersData.Users);
-          listUsersData.Users = listUsersData.Users
-            ? [...listUsersData.Users, ...usersData.Users]
-            : usersData.Users;
-          // If no remaining users are there, no paginationToken is returned from cognito
-          PaginationToken = usersData.PaginationToken;
-          if (usersData?.Users.length > 0) {
-            loopCount = 0;
-          } else {
-            loopCount++;
-          }
-
-          console.log(
-            "usersData",
-            usersData,
-            "users.length",
-            usersData.Users.length,
+            let usersData = await cognitoISP.send(
+              new ListUsersInGroupCommand(params),
+            );
+            listUsersData.Users = listUsersData.Users
+              ? [...listUsersData.Users, ...usersData.Users]
+              : usersData.Users;
+            PaginationToken = usersData.NextToken;
+            if (usersData?.Users.length > 0) {
+              loopCount = 0;
+            } else {
+              loopCount++;
+            }
+          } while (
+            PaginationToken ||
+            i < roles.length ||
+            listUsersData.Users.length >= page * perPage
           );
-          console.log(
-            "listUsersData",
-            listUsersData,
-            "listUsersData.Users.length",
-            listUsersData.Users.length,
+          listUsersData.Users = listUsersData.Users.slice(
+            (page - 1) * perPage,
+            perPage * page,
           );
-        } while (
-          PaginationToken &&
-          loopCount < 20 &&
-          limit - listUsersData.Users.length > 0
-        );
+          usersCount = listUsersData.Users.length;
+        }
       }
 
       let resData = [];
