@@ -9,19 +9,157 @@ import {
 
 import postResData from "./post.mjs";
 import getResData from "./get.mjs";
-import { parse } from "path";
 
 const cognitoISP = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION,
 });
 
+const getUsers = async (
+  userGroup,
+  requiredUserNum,
+  paginationToken,
+  requesterRoles,
+  filter = {},
+) => {
+  console.log(
+    "getUsers w/wo group",
+    userGroup,
+    "amount",
+    requiredUserNum,
+    "pagiToken",
+    paginationToken,
+    "requester roles",
+    requesterRoles,
+  );
+
+  let listUsersData = { Users: [] };
+
+  // listing users with desired userGroup
+  if (userGroup) {
+    // only SA can list SA Users
+    if (requesterRoles[0] !== "SA" && userGroup === "SA") {
+      return { users: [], paginationToken: null, statusCode: 403 };
+    }
+
+    // TA can only list own TA users
+    if (
+      requesterRoles[0] !== "SA" &&
+      requesterRoles[0] !== "SPA" &&
+      !requesterRoles.includes(userGroup)
+    ) {
+      return { users: [], paginationToken: null, statusCode: 403 };
+    }
+  }
+
+  let loopCount = 0;
+  let params = {};
+  let usersData = { Users: [] };
+
+  try {
+    do {
+      if (userGroup) {
+        params = {
+          UserPoolId: process.env.USERPOOL_ID,
+          Limit: requiredUserNum - listUsersData.Users.length, // Number of users to display per page
+          GroupName: userGroup,
+          ...(paginationToken && { NextToken: paginationToken }),
+        };
+        usersData = await cognitoISP.send(new ListUsersInGroupCommand(params));
+        console.log("listUsersInGroup result", usersData.Users);
+      } else {
+        let filterString = null;
+        if (Object.keys(filter).includes("given_name")) {
+          filterString = 'given_name ^= "' + filter["given_name"] + '"';
+        }
+
+        if (Object.keys(filter).includes("family_name")) {
+          filterString = 'family_name ^= "' + filter["family_name"] + '"';
+        }
+
+        if (Object.keys(filter).includes("email")) {
+          filterString = 'email ^= "' + filter["email"] + '"';
+        }
+
+        console.log("filterString", filterString);
+        console.log("filter", filter);
+
+        params = {
+          UserPoolId: process.env.USERPOOL_ID,
+          Limit: requiredUserNum - listUsersData.Users.length, // Number of users to display per page
+          ...(paginationToken && { PaginationToken: paginationToken }),
+          ...(filterString && { Filter: filterString }),
+        };
+        usersData = await cognitoISP.send(new ListUsersCommand(params));
+        console.log("listUser result", usersData.Users);
+      }
+
+      // protection of empty user list returned with pagination token
+      if (usersData?.Users.length > 0) {
+        loopCount = 0;
+        // adding user group info into the data
+        try {
+          const transform = async (users) => {
+            return Promise.all(
+              users.map((item) => getResData(item, cognitoISP)),
+            );
+          };
+          usersData = await transform(usersData.Users);
+          usersData = { Users: usersData };
+        } catch (error) {
+          // listuser error right after delete.
+          // use this to avoid error in listuser response.
+          console.log("err", error);
+        }
+
+        if (!userGroup) {
+          // filter out "SA" users when requesterRole is "SPA"
+          if (requesterRoles[0] === "SPA") {
+            usersData.Users = usersData.Users.filter(
+              (user) => user.groups.includes("SA") === false,
+            );
+          }
+          // filter out "TA" users when requesterRole is "TA"
+          if (requesterRoles[0] !== "SPA" && requesterRoles[0] !== "SA") {
+            // judge wehther user.groups has intersection against requestRole array
+            usersData.Users = usersData.Users.filter((user) =>
+              user.groups.some((group) => requesterRoles.includes(group)),
+            );
+          }
+        }
+      } else {
+        loopCount++;
+      }
+
+      listUsersData.Users = listUsersData.Users
+        ? [...listUsersData.Users, ...usersData.Users]
+        : usersData.Users;
+      paginationToken = usersData.PaginationToken;
+    } while (
+      paginationToken &&
+      loopCount < 20 &&
+      requiredUserNum - listUsersData.Users.length > 0
+    );
+  } catch (error) {
+    console.log("listUser error", error);
+    return { users: [], paginationToken: null, statusCode: 500 };
+  }
+
+  let resData = listUsersData.Users;
+
+  resData.sort((a, b) => {
+    if (a.id < b.id) return -1;
+    if (a.id > b.id) return 1;
+    return 0;
+  });
+
+  return { users: resData, paginationToken, statusCode: 200 };
+};
+
 export const handler = async (event) => {
   console.info("EVENT\n" + JSON.stringify(event, null, 2));
 
   //To get the list of Users in aws Cognito
-  let params = {};
   let filter = {};
-  let filterString = "";
 
   let errMsg = { type: "exception", message: "Service Error" };
 
@@ -49,60 +187,62 @@ export const handler = async (event) => {
         body: JSON.stringify({ data: postResult }),
       };
     } else {
+      let page = 0;
       let PaginationToken = null;
+      let usersAmount = 0;
+      let queryGroup = null;
 
-      if (
-        event.queryStringParameters &&
-        event.queryStringParameters.page &&
-        parseInt(event.queryStringParameters.page) > 1 &&
-        event.body
-      ) {
-        PaginationToken = event.body;
+      if (event.queryStringParameters) {
+        if (event.queryStringParameters.page) {
+          page = parseInt(event.queryStringParameters.page);
+        }
+
+        if (event.queryStringParameters.perPage) {
+          usersAmount = parseInt(event.queryStringParameters.perPage);
+        }
+
+        if (event.queryStringParameters.filter) {
+          filter = JSON.parse(event.queryStringParameters.filter);
+
+          if (
+            Object.keys(filter).includes("groups") &&
+            filter["groups"] !== ""
+          ) {
+            queryGroup = filter["groups"];
+          }
+        }
       }
 
-      if (
-        event.queryStringParameters &&
-        event.queryStringParameters.page &&
-        parseInt(event.queryStringParameters.page) > 1 &&
-        !event.body
-      ) {
-        const start =
-          (parseInt(event.queryStringParameters.page) - 1) *
-            parseInt(event.queryStringParameters.perPage) +
-          1;
-        return {
-          statusCode: 200,
-          headers: {
-            "Access-Control-Allow-Headers":
-              "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
-            "Access-Control-Expose-Headers": "Content-Range",
-            "Content-Range": `users ${start}-${start}/${0}`,
-          },
-          body: JSON.stringify({
-            data: [],
-            pageInfo: {
-              hasPreviousPage: true,
-              hasNextPage: false,
+      const start = (page - 1) * usersAmount + 1;
+
+      if (page && page > 1) {
+        if (event.body) {
+          PaginationToken = event.body;
+        } else {
+          return {
+            statusCode: 200,
+            headers: {
+              "Access-Control-Allow-Headers":
+                "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
+              "Access-Control-Expose-Headers": "Content-Range",
+              "Content-Range": `users ${start}-${start}/${0}`,
             },
-            PaginationToken: null,
-          }),
-        };
+            body: JSON.stringify({
+              data: [],
+              pageInfo: {
+                hasPreviousPage: true,
+                hasNextPage: false,
+              },
+              PaginationToken: null,
+            }),
+          };
+        }
       }
-
-      let listUsersData = {};
-      listUsersData.Users = [];
-      let usersCount = 0;
-      let usersData = null;
-      let loopCount = 0;
-      if (event.queryStringParameters && event.queryStringParameters.filter) {
-        filter = JSON.parse(event.queryStringParameters.filter);
-      }
-      const limit = parseInt(event.queryStringParameters.perPage);
 
       // get user group info from jwt
-      const jwt = event.headers["authorization"].split(" ")[1];
+      const jwt = event.headers["authorization"];
       const jwtBase64Url = jwt.split(".")[1];
 
       const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
@@ -110,200 +250,53 @@ export const handler = async (event) => {
 
       const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
       //get userpool id
-      const oidc_issuer = jwtPayload["issuer"].split("/").pop();
+      const oidc_issuer = jwtPayload["iss"].split("/").pop();
 
-      let roles = jwtPayload["cognito:groups"].split(",");
+      let requesterRoles = jwtPayload["cognito:groups"];
       console.log("jwtPayload", jwtPayload);
-      console.log("roles got", roles);
+      console.log("roles got", requesterRoles);
 
-      if (roles.includes("SPA")) {
-        roles = ["SPA"];
+      if (requesterRoles.includes("SPA")) {
+        requesterRoles = ["SPA"];
       }
-      if (roles.includes("SA")) {
-        roles = ["SA"];
-      }
-
-      if (roles[0] === "SPA" || roles[0] === "SA") {
-        if (Object.keys(filter).includes("groups") && filter["groups"] !== "") {
-          if (roles[0] === "SPA" && filter["groups"] === "SA") {
-            console.log("user is not authorized to access the group");
-            return {
-              statusCode: 403,
-              headers: {
-                "Access-Control-Allow-Headers":
-                  "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
-                "Access-Control-Expose-Headers": "Content-Range",
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Credentials": true,
-              },
-              body: JSON.stringify({
-                data: [],
-                pageInfo: {
-                  hasPreviousPage: false,
-                  hasNextPage: false,
-                },
-                PaginationToken: null,
-              }),
-            };
-          }
-
-          do {
-            params = {
-              UserPoolId: process.env.USERPOOL_ID,
-              Limit: limit - listUsersData.Users.length, // Number of users to display per page
-              GroupName: filter["groups"],
-              ...(PaginationToken && { NextToken: PaginationToken }),
-            };
-
-            usersData = await cognitoISP.send(
-              new ListUsersInGroupCommand(params),
-            );
-            listUsersData.Users = listUsersData.Users
-              ? [...listUsersData.Users, ...usersData.Users]
-              : usersData.Users;
-            PaginationToken = usersData.NextToken;
-            if (usersData?.Users.length > 0) {
-              loopCount = 0;
-            } else {
-              loopCount++;
-            }
-          } while (
-            PaginationToken &&
-            loopCount < 20 &&
-            limit - listUsersData.Users.length > 0
-          );
-          usersCount = listUsersData.Users.length;
-        } else {
-          // Get total count of user
-          const describeData = await cognitoISP.send(
-            new DescribeUserPoolCommand({
-              UserPoolId: process.env.USERPOOL_ID,
-            }),
-          );
-          console.log("describeUserpool result", describeData);
-          usersCount = describeData.UserPool.EstimatedNumberOfUsers;
-
-          if (Object.keys(filter).includes("given_name")) {
-            filterString = 'given_name ^= "' + filter["given_name"] + '"';
-          }
-
-          if (Object.keys(filter).includes("family_name")) {
-            filterString = 'family_name ^= "' + filter["family_name"] + '"';
-          }
-
-          if (Object.keys(filter).includes("email")) {
-            filterString = 'email ^= "' + filter["email"] + '"';
-          }
-
-          console.log("filterString", filterString);
-          console.log("filter", filter);
-          //Saving the Pagination token for each page in obj
-
-          do {
-            params = {
-              UserPoolId: process.env.USERPOOL_ID,
-              Limit: limit - listUsersData.Users.length, // No of users to display per page
-              ...(PaginationToken && { PaginationToken: PaginationToken }), // tokens[1] contain the token query for page 1.
-              ...(filterString && { Filter: filterString }),
-            };
-
-            console.info("params", params);
-
-            usersData = await cognitoISP.send(new ListUsersCommand(params));
-            console.log("listUser result", usersData.Users);
-            listUsersData.Users = listUsersData.Users
-              ? [...listUsersData.Users, ...usersData.Users]
-              : usersData.Users;
-            // If no remaining users are there, no paginationToken is returned from cognito
-            PaginationToken = usersData.PaginationToken;
-            if (usersData?.Users.length > 0) {
-              loopCount = 0;
-            } else {
-              loopCount++;
-            }
-
-            console.log(
-              "usersData",
-              usersData,
-              "users.length",
-              usersData.Users.length,
-            );
-            console.log(
-              "listUsersData",
-              listUsersData,
-              "listUsersData.Users.length",
-              listUsersData.Users.length,
-            );
-          } while (
-            PaginationToken &&
-            loopCount < 20 &&
-            limit - listUsersData.Users.length > 0
-          );
-        }
-      } else {
-        // iterate roles against the user roles value, list each group users of that role.
-        PaginationToken = null;
-        const page = parseInt(event.queryStringParameters.page);
-        const perPage = parseInt(event.queryStringParameters.perPage);
-        for (let i = 0; i < roles.length; i++) {
-          do {
-            params = {
-              UserPoolId: process.env.USERPOOL_ID,
-              Limit: 60, // Number of users to display per page
-              GroupName: roles[i],
-              ...(PaginationToken && { NextToken: PaginationToken }),
-            };
-
-            let usersData = await cognitoISP.send(
-              new ListUsersInGroupCommand(params),
-            );
-            listUsersData.Users = listUsersData.Users
-              ? [...listUsersData.Users, ...usersData.Users]
-              : usersData.Users;
-            PaginationToken = usersData.NextToken;
-            if (usersData?.Users.length > 0) {
-              loopCount = 0;
-            } else {
-              loopCount++;
-            }
-          } while (
-            PaginationToken ||
-            i < roles.length ||
-            listUsersData.Users.length >= page * perPage
-          );
-          listUsersData.Users = listUsersData.Users.slice(
-            (page - 1) * perPage,
-            perPage * page,
-          );
-          usersCount = listUsersData.Users.length;
-        }
+      if (requesterRoles.includes("SA")) {
+        requesterRoles = ["SA"];
       }
 
-      let resData = [];
-      const page = parseInt(event.queryStringParameters.page);
-      const perPage = parseInt(event.queryStringParameters.perPage);
-      const start = (page - 1) * perPage + 1;
+      const { users, paginationToken, statusCode } = await getUsers(
+        queryGroup,
+        usersAmount,
+        PaginationToken,
+        requesterRoles,
+        filter,
+      );
 
-      try {
-        const transform = async (users) => {
-          return Promise.all(users.map((item) => getResData(item, cognitoISP)));
+      if (statusCode !== 200) {
+        return {
+          statusCode: statusCode,
+          headers: {
+            "Access-Control-Allow-Headers":
+              "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
+            "Access-Control-Expose-Headers": "Content-Range",
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Credentials": true,
+          },
+          body: JSON.stringify({
+            data: [],
+            pageInfo: {
+              hasPreviousPage: false,
+              hasNextPage: false,
+            },
+            PaginationToken: null,
+          }),
         };
-        resData = await transform(listUsersData.Users);
-      } catch (error) {
-        // listuser error right after delete.
-        // use this to avoid error in listuser response.
-        console.log("err", error);
       }
 
-      resData.sort((a, b) => {
-        if (a.id < b.id) return -1;
-        if (a.id > b.id) return 1;
-        return 0;
-      });
+      console.log("getUsers successfully", users, "users.length", users.length);
 
-      const end = resData.length + start - 1;
+      const end = users.length + start - 1;
 
       return {
         statusCode: 200,
@@ -313,15 +306,15 @@ export const handler = async (event) => {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
           "Access-Control-Expose-Headers": "Content-Range",
-          "Content-Range": `users ${start}-${end}/${usersCount}`,
+          "Content-Range": `users ${start}-${end}/${end}`,
         },
         body: JSON.stringify({
-          data: resData,
+          data: users,
           pageInfo: {
             hasPreviousPage: page > 1 ? true : false,
-            hasNextPage: PaginationToken ? true : false,
+            hasNextPage: paginationToken ? true : false,
           },
-          PaginationToken,
+          PaginationToken: paginationToken,
         }),
       };
     }
