@@ -281,7 +281,7 @@ export class SSOApiGateway {
 
 
         resourceTypes.forEach(resourceType => {
-            const poolId = resourceType === 'admins' || 'admingroups' ? adminUserPoolId : userPoolId;
+            const poolId = (resourceType === 'admins' || resourceType === 'admingroups') ? adminUserPoolId : userPoolId;
             const lambdaList = this.createLambda(
                 `${resourceType}list`,
                 poolId ,
