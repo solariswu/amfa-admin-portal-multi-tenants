@@ -7,7 +7,7 @@ import { validatePhoneNumber } from "../utils/validation";
 
 export const AdminCreate = () => {
     const { data } = useGetList(
-        'groups',
+        'admingroups',
         {
             pagination: { page: 1, perPage: 60 },
             sort: { field: 'createdAt', order: 'DESC' }
@@ -90,7 +90,6 @@ export const AdminCreate = () => {
                                 source="groups"
                                 choices={groupChoices}
                                 isRequired={true}
-                                defaultValue={['user']}
                             />
                         </Grid>
                         <Grid item xs={12}>

@@ -22,7 +22,7 @@ import UserListMenu from "./AdminListMenu";
 
 import awsmobile from "../aws-export";
 
-const apiUrl = awsmobile.aws_backend_api_url;
+const apiUrl = awsmobile.aws_backend_api_url
 
 export const AdminList = (props) => {
 
@@ -32,7 +32,7 @@ export const AdminList = (props) => {
   });
 
   const groupChoices = admingroups
-    ? groups.map((item) => ({ id: item.id, name: item.group }))
+    ? admingroups.map((item) => ({ id: item.id, name: item.group }))
     : [];
   const usersFilter = [
     <SelectInput
@@ -111,7 +111,7 @@ export const AdminList = (props) => {
           rowClick={false}
           bulkActionButtons={false}
           optimized
-          // key={configData}
+        // key={configData}
         >
           <TextField
             source="email"
@@ -121,8 +121,7 @@ export const AdminList = (props) => {
           <FunctionField
             label="Full Name"
             render={(record) =>
-              `${record.given_name ? record.given_name : ""} ${
-                record.family_name ? record.family_name : ""
+              `${record.given_name ? record.given_name : ""} ${record.family_name ? record.family_name : ""
               }`
             }
           />
@@ -135,7 +134,7 @@ export const AdminList = (props) => {
                     <ChipField
                       record={{ name: record }}
                       source="name"
-                      color={"warning"}
+                      color={record === "SA" ? "error" : "warning"}
                       size="small"
                     />
                   );

@@ -269,7 +269,7 @@ export class SSOApiGateway {
     public createAdminApiEndpoints(userPoolId: string, samlClientId: string, samlClientSecrect: string,
         spPortalClientId: string, userPoolDomain: string, adminUserPoolId: string
     ) {
-        const resourceTypes = ['users', 'groups', 'idps', 'appclients', 'importusers', 'admins'];
+        const resourceTypes = ['users', 'groups', 'idps', 'appclients', 'importusers', 'admins', 'admingroups'];
 
         this.imoprtUsersJobsS3Bucket = new Bucket(this.scope, `${project_name}-${this.region}-${current_stage}-ImportUsersBucket`, {
                 bucketName: `${this.account}-${this.region}-${project_name}-importusersjobs`,
@@ -281,7 +281,7 @@ export class SSOApiGateway {
 
 
         resourceTypes.forEach(resourceType => {
-            const poolId = resourceType == 'admins' ? adminUserPoolId : userPoolId;
+            const poolId = resourceType == 'admins' || 'admingroups' ? adminUserPoolId : userPoolId;
             const lambdaList = this.createLambda(
                 `${resourceType}list`,
                 poolId ,
@@ -297,21 +297,24 @@ export class SSOApiGateway {
                 ),
                 authorizer: this.authorizor,
             });
-            const lambda = this.createLambda(
-                `${resourceType}`,
-                poolId,
-                this.getPolicyStatements(this.userPoolIdToArn(poolId), resourceType, false)
-            );
-            // 👇 add route for CRUD /resource/id
-            this.api.addRoutes({
-                path: `/${resourceType}/{id}`,
-                methods: [HttpMethod.DELETE, HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT],
-                integration: new HttpLambdaIntegration(
-                    `${resourceType}-integration`,
-                    lambda,
-                ),
-                authorizer: this.authorizor,
-            });
+
+            if (resourceType !== 'admingroups') {
+                const lambda = this.createLambda(
+                    `${resourceType}`,
+                    poolId,
+                    this.getPolicyStatements(this.userPoolIdToArn(poolId), resourceType, false)
+                );
+                // 👇 add route for CRUD /resource/id
+                this.api.addRoutes({
+                    path: `/${resourceType}/{id}`,
+                    methods: [HttpMethod.DELETE, HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT],
+                    integration: new HttpLambdaIntegration(
+                        `${resourceType}-integration`,
+                        lambda,
+                    ),
+                    authorizer: this.authorizor,
+                });
+            }
         });
 
         const samlsListLambda = this.createAmfaSamlSpsLambda('samlslist',
@@ -747,6 +750,13 @@ export class SSOApiGateway {
                     'cognito-idp:AdminSetUserMFAPreference',
                     'cognito-idp:AdminLinkProviderForUser',
                     'cognito-idp:ListUsersInGroup',]
+            },
+            admingroups: {
+                normal: [],
+                list: [
+                    'cognito-idp:CreateGroup',
+                    'cognito-idp:ListGroups',
+                ]
             },
             users: {
                 normal: [

@@ -31,7 +31,7 @@ import {
 import { isIDN, validatePhoneNumber } from "../utils/validation";
 
 export const AdminEdit = () => {
-  const { data } = useGetList("groups", {
+  const { data } = useGetList("admingroups", {
     pagination: { page: 1, perPage: 60 },
     sort: { field: "createdAt", order: "DESC" },
   });
@@ -41,20 +41,6 @@ export const AdminEdit = () => {
 
     if (isIDN()(values["phone_number"])) {
       errors["phone_number"] = isIDN()(values["phone_number"]);
-    }
-
-    if (isIDN()(values["voice-number"])) {
-      errors["voice-number"] = isIDN()(values["voice-number"]);
-    }
-
-    if (values["alter-email"]) {
-      if (
-        values["alter-email"].toLowerCase().trim() ===
-        values["email"].toLowerCase().trim()
-      ) {
-        errors["alter-email"] =
-          "Alt email can not be the same as Primary email address";
-      }
     }
 
     return errors;
@@ -167,25 +153,6 @@ export const AdminEdit = () => {
                 <Grid item xs={12} sm={5} md={5} lg={5}>
                   <TextInput
                     variant="outlined"
-                    label="Voice Number"
-                    fullWidth
-                    source="voice-number"
-                    validate={validatePhoneNumber}
-                  />
-                </Grid>
-                <Grid item xs={0} sm={1} md={1} lg={1} />
-                <Grid item xs={12} sm={5} md={5} lg={5}>
-                  <TextInput
-                    fullWidth
-                    type="email"
-                    label="Alternate Email"
-                    source="alter-email"
-                    parse={(v) => (v ? v.toLowerCase() : "")}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={5} md={5} lg={5}>
-                  <TextInput
-                    variant="outlined"
                     fullWidth
                     label="Location/Address"
                     source="locale"
@@ -199,27 +166,6 @@ export const AdminEdit = () => {
                     choices={groupChoices}
                     fullWidth
                     isRequired={true}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={5} md={5} lg={5}>
-                  <FunctionField
-                    render={(record) => (
-                      <BooleanInput
-                        label="Mobile Token"
-                        source="hasMobileToken"
-                        fullWidth
-                        disabled={!record.hasMobileToken}
-                        helperText={
-                          record.hasMobileToken ? (
-                            <span style={{ color: "red" }}>
-                              turn this off will remove mobile token
-                            </span>
-                          ) : (
-                            "no mobile token setup"
-                          )
-                        }
-                      />
-                    )}
                   />
                 </Grid>
                 <Grid item xs={12} sm={12} md={12} lg={12}>
