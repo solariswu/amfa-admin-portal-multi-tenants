@@ -9,23 +9,6 @@ import {
     AdminResetUserPasswordCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-const postURL = `https://api.${process.env.AMFA_BASE_URL}/amfa`;
-
-const notifyAmfa = async (userEmail, phase, otptype, newProfileValue) => {
-
-    const amfaResponse = await fetch(postURL, {
-        method: "POST",
-        headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Origin': `https://${process.env.AMFA_BASE_URL}`,
-        },
-        body: JSON.stringify({ email: userEmail, phase, otptype, newProfileValue }),
-    });
-
-    return amfaResponse;
-}
-
 const assignGroup = async (username, group, cognitoISP) => {
     return await cognitoISP.send(new AdminAddUserToGroupCommand({
         UserPoolId: process.env.USERPOOL_ID,
@@ -132,8 +115,6 @@ export const putResData = async (data, cognitoISP) => {
             }
         })
 
-        // user attributes MFA related
-
         // used for compare undefine, '', null all togther
         let valueA = user.email ? user.email : '';
         let valueB = data.email ? data.email : '';
@@ -162,52 +143,12 @@ export const putResData = async (data, cognitoISP) => {
             newOtpValues.push(data.phone_number);
         }
 
-        valueA = user['alter-email'] ? user['alter-email'] : ''
-        valueB = data['alter-email'] ? data['alter-email'] : ''
-
-        if (valueA != valueB) {
-            attributes.push({ "Name": 'custom:alter-email', "Value": data['alter-email'] ? data['alter-email'] : '' });
-            user['alter-email'] = data['alter-email'];
-
-            changedOtpTypes.push('Alt Email');
-            newOtpValues.push(data['alter-email']);
-        }
-
-        valueA = user['voice-number'] ? user['voice-number'] : ''
-        valueB = data['voice-number'] ? data['voice-number'] : ''
-
-        if (valueA != valueB) {
-            attributes.push({ "Name": 'custom:voice-number', "Value": data['voice-number'] ? data['voice-number'] : '' });
-            user['voice-number'] = data['voice-number'];
-
-            changedOtpTypes.push('Voice Mail')
-            newOtpValues.push(data['voice-number'])
-        }
-
-        if (user.hasMobileToken && !data.hasMobileToken) {
-            // remove user mobile token
-            // todo update amfa side
-            attributes.push({ "Name": 'custom:totp-label', "Value": '' });
-            user.hasMobileToken = false;
-
-            const amfaResponse = notifyAmfa(data.email, 'admindeletetotp');
-            await new Promise(r => setTimeout(r, 1000));
-
-            console.log('delete totp amfa api response', amfaResponse);
-        }
-
         if (attributes.length > 0) {
             await cognitoISP.send(new AdminUpdateUserAttributesCommand({
                 UserAttributes: attributes,
                 Username: data.username,
                 UserPoolId: process.env.USERPOOL_ID
             }));
-        }
-
-        if (changedOtpTypes.length > 0) {
-            const amfaResponse = notifyAmfa(data.email, 'adminupdateuser', changedOtpTypes, newOtpValues);
-            await new Promise(r => setTimeout(r, 1000));
-            console.log('notify amfa update user response', amfaResponse);
         }
 
         if (user.sms_mfa_enabled !== data.sms_mfa_enabled) {

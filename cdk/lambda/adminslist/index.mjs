@@ -7,7 +7,7 @@ import {
   ListUsersInGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-import postResData from "./post.mjs";
+import postResData, { getAvailableTAGroupsForRole } from "./post.mjs";
 import getResData from "./get.mjs";
 
 const cognitoISP = new CognitoIdentityProviderClient({
@@ -171,7 +171,35 @@ export const handler = async (event) => {
       // invite new user
       const body = JSON.parse(event.body);
       console.log("POST data: ", body);
-      const postResult = await postResData(body.data, cognitoISP);
+
+      // Extract requester roles from JWT for RBAC validation
+      const jwt = event.headers["authorization"];
+      const jwtBase64Url = jwt.split(".")[1];
+      const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const jwtBuffer = Buffer.from(jwtBase64, "base64");
+      const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
+
+      let requesterRoles = jwtPayload["cognito:groups"];
+      console.log("POST requester roles:", requesterRoles);
+
+      // Prioritize roles: SA > SPA > TA_XXX
+      if (requesterRoles.includes("SA")) {
+        requesterRoles = ["SA"];
+      } else if (requesterRoles.includes("SPA")) {
+        requesterRoles = ["SPA"];
+      } else {
+        // Keep the first TA_XXX role found
+        const taRole = requesterRoles.find((role) => role.startsWith("TA_"));
+        if (taRole) {
+          requesterRoles = [taRole];
+        }
+      }
+
+      const postResult = await postResData(
+        body.data,
+        cognitoISP,
+        requesterRoles,
+      );
 
       return {
         statusCode: 200,
@@ -193,6 +221,50 @@ export const handler = async (event) => {
       let queryGroup = null;
 
       if (event.queryStringParameters) {
+        // Handle request for available groups
+        if (event.queryStringParameters.getAvailableGroups === "true") {
+          // Extract requester roles from JWT
+          const jwt = event.headers["authorization"];
+          const jwtBase64Url = jwt.split(".")[1];
+          const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
+          const jwtBuffer = Buffer.from(jwtBase64, "base64");
+          const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
+
+          let requesterRoles = jwtPayload["cognito:groups"];
+
+          // Prioritize roles: SA > SPA > TA_XXX
+          if (requesterRoles.includes("SA")) {
+            requesterRoles = ["SA"];
+          } else if (requesterRoles.includes("SPA")) {
+            requesterRoles = ["SPA"];
+          } else {
+            // Keep the first TA_XXX role found
+            const taRole = requesterRoles.find((role) =>
+              role.startsWith("TA_"),
+            );
+            if (taRole) {
+              requesterRoles = [taRole];
+            }
+          }
+
+          const availableGroups =
+            await getAvailableTAGroupsForRole(requesterRoles);
+
+          return {
+            statusCode: 200,
+            headers: {
+              "Access-Control-Allow-Headers":
+                "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
+              "Access-Control-Expose-Headers": "Content-Range",
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Credentials": true,
+            },
+            body: JSON.stringify({ data: availableGroups }),
+          };
+        }
+
         if (event.queryStringParameters.page) {
           page = parseInt(event.queryStringParameters.page);
         }
@@ -256,11 +328,17 @@ export const handler = async (event) => {
       console.log("jwtPayload", jwtPayload);
       console.log("roles got", requesterRoles);
 
-      if (requesterRoles.includes("SPA")) {
-        requesterRoles = ["SPA"];
-      }
+      // Prioritize roles: SA > SPA > TA_XXX
       if (requesterRoles.includes("SA")) {
         requesterRoles = ["SA"];
+      } else if (requesterRoles.includes("SPA")) {
+        requesterRoles = ["SPA"];
+      } else {
+        // Keep the first TA_XXX role found
+        const taRole = requesterRoles.find((role) => role.startsWith("TA_"));
+        if (taRole) {
+          requesterRoles = [taRole];
+        }
       }
 
       const { users, paginationToken, statusCode } = await getUsers(

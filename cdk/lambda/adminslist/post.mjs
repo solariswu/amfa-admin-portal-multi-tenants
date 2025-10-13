@@ -1,8 +1,74 @@
 import {
 	AdminCreateUserCommand,
 	AdminAddUserToGroupCommand,
-	AdminLinkProviderForUserCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
+
+// Dummy API to get available TA groups - replace with actual API call
+const getAvailableTAGroups = async () => {
+	// This is a placeholder - replace with actual API call
+	return ['TA_FINANCE', 'TA_HR', 'TA_IT', 'TA_MARKETING', 'TA_OPERATIONS'];
+};
+
+// RBAC validation function
+const validateGroupCreationPermission = async (requesterRoles, targetGroups) => {
+	console.log('Validating group creation permission:', { requesterRoles, targetGroups });
+
+	if (!requesterRoles || requesterRoles.length === 0) {
+		return { isValid: false, error: 'No requester roles provided' };
+	}
+
+	if (!targetGroups || targetGroups.length === 0) {
+		return { isValid: false, error: 'No target groups specified' };
+	}
+
+	const availableTAGroups = await getAvailableTAGroups();
+
+	// Check if requester has SA or SPA role
+	const hasSA = requesterRoles.includes('SA');
+	const hasSPA = requesterRoles.includes('SPA');
+
+	// Get all TA_xxx roles that the requester has
+	const requesterTARoles = requesterRoles.filter(role => 
+		role.startsWith('TA_') && availableTAGroups.includes(role)
+	);
+
+	for (const targetGroup of targetGroups) {
+		let isAuthorized = false;
+		let errorMessage = '';
+
+		if (hasSA) {
+			// SA can create users with SPA or any TA_XXX group
+			if (targetGroup === 'SPA' || availableTAGroups.includes(targetGroup)) {
+				isAuthorized = true;
+			} else {
+				errorMessage = `SA cannot create user with group: ${targetGroup}. Allowed groups: SPA, ${availableTAGroups.join(', ')}`;
+			}
+		} else if (hasSPA) {
+			// SPA can create users with SPA or any TA_XXX group
+			if (targetGroup === 'SPA' || availableTAGroups.includes(targetGroup)) {
+				isAuthorized = true;
+			} else {
+				errorMessage = `SPA cannot create user with group: ${targetGroup}. Allowed groups: SPA, ${availableTAGroups.join(', ')}`;
+			}
+		} else if (requesterTARoles.length > 0) {
+			// TA_XXX users can create users with any of their TA_XXX groups
+			if (requesterTARoles.includes(targetGroup)) {
+				isAuthorized = true;
+			} else {
+				errorMessage = `Requester with roles [${requesterTARoles.join(', ')}] can only create users with groups: ${requesterTARoles.join(', ')}. Cannot create user with group: ${targetGroup}`;
+			}
+		} else {
+			// No valid roles found
+			errorMessage = `Requester roles [${requesterRoles.join(', ')}] are not authorized to create users`;
+		}
+
+		if (!isAuthorized) {
+			return { isValid: false, error: errorMessage };
+		}
+	}
+
+	return { isValid: true };
+};
 
 const assignApplications = async (groups, username, cognitoISP) => {
 	return Promise.all(groups.map((group) =>
@@ -62,10 +128,12 @@ function generatePassword(lower, upper, number, symbol, length) {
     return finalPassword
 }
 
-export const postResData = async (data, cognitoISP) => {
-	console.log('postResData Input:', data);
+export const postResData = async (data, cognitoISP, requesterRoles = []) => {
+	console.log('postResData Input:', { data, requesterRoles });
+
 	const groups = [];
 	const attributes = [];
+
 	Object.keys(data).map(key => {
 		switch (key.toLowerCase()) {
 			case 'locale':
@@ -116,6 +184,14 @@ export const postResData = async (data, cognitoISP) => {
 		return key;
 	});
 
+	// RBAC validation
+	if (groups.length > 0) {
+		const validation = await validateGroupCreationPermission(requesterRoles, groups);
+		if (!validation.isValid) {
+			throw new Error(`RBAC Validation Failed: ${validation.error}`);
+		}
+	}
+
 	// to allow using email login, amfa has to set user email to verified
 	attributes.push({ "Name": 'email_verified', "Value": 'true' });
 
@@ -144,28 +220,6 @@ export const postResData = async (data, cognitoISP) => {
 			}
 		}
 
-		try {
-			await cognitoISP.send(new AdminLinkProviderForUserCommand({
-				UserPoolId: process.env.USERPOOL_ID,
-				DestinationUser: {
-					ProviderName: 'Cognito',
-					ProviderAttributeName: 'email',
-					ProviderAttributeValue: data['email'].toLowerCase(),
-				},
-				SourceUser: {
-					ProviderName: 'apersona',
-					ProviderAttributeName: 'email',
-					ProviderAttributeValue: data['email'].toLowerCase(),
-				}
-			}))
-		}
-		catch (err) {
-			console.log('create user - AdminLinkProviderForUser Error:', err);
-		}
-
-		const email_verified = item.Attributes.find(attr => attr.Name === "email_verified")?.Value;
-		const phone_number_verified = item.Attributes.find(attr => attr.Name === "phone_number_verified")?.Value;
-
 		const directMappingArrtibutes = [
 			'email', 'phone_number', 'locale', 'sub', 'profile', 'given_name', 'family_name',
 			'nickname', 'name', 'middle_name', 'picture', 'profile', 'gender', 'birthdate'/*, 'address'*/];
@@ -184,5 +238,38 @@ export const postResData = async (data, cognitoISP) => {
 		}
 	}
 }
+
+// Export function to get available TA groups for frontend use
+export const getAvailableTAGroupsForRole = async (requesterRoles) => {
+	if (!requesterRoles || requesterRoles.length === 0) {
+		return { groups: [], error: 'No requester roles provided' };
+	}
+
+	const availableTAGroups = await getAvailableTAGroups();
+	
+	// Check if requester has SA or SPA role
+	const hasSA = requesterRoles.includes('SA');
+	const hasSPA = requesterRoles.includes('SPA');
+	
+	// Get all TA_xxx roles that the requester has
+	const requesterTARoles = requesterRoles.filter(role => 
+		role.startsWith('TA_') && availableTAGroups.includes(role)
+	);
+
+	if (hasSA) {
+		// SA can create users with SPA or any TA_XXX group
+		return { groups: ['SPA', ...availableTAGroups] };
+	} else if (hasSPA) {
+		// SPA can create users with SPA or any TA_XXX group
+		return { groups: ['SPA', ...availableTAGroups] };
+	} else if (requesterTARoles.length > 0) {
+		// TA_XXX users can create users with any of their TA_XXX groups
+		// Remove duplicates and sort for consistency
+		const uniqueGroups = [...new Set(requesterTARoles)].sort();
+		return { groups: uniqueGroups };
+	} else {
+		return { groups: [], error: `Requester roles [${requesterRoles.join(', ')}] cannot create users` };
+	}
+};
 
 export default postResData;
