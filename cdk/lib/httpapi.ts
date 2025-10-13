@@ -749,7 +749,9 @@ export class SSOApiGateway {
                     'cognito-idp:AdminAddUserToGroup',
                     'cognito-idp:AdminSetUserMFAPreference',
                     'cognito-idp:AdminLinkProviderForUser',
-                    'cognito-idp:ListUsersInGroup',]
+                    'cognito-idp:ListUsersInGroup',
+                    'cognito-idp:ListGroups',
+                ]
             },
             admingroups: {
                 normal: [],
