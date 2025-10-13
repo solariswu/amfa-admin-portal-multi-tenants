@@ -14,7 +14,7 @@ export const AdminCreate = () => {
         }
     );
 
-    const groupChoices = data ? data.map(item => ({ id: item.id, name: item.group })) : [];
+    const groupChoices = data ? data.filter(item => item !== "SA").map(item => ({ id: item.id, name: item.group })) : [];
 
     return (
         <Create title="Invite User" redirect="show">

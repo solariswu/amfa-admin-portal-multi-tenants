@@ -21,7 +21,7 @@ const getAvailableTAGroups = async (cognitoISP) => {
 const validateGroupCreationPermission = async (
   requesterRoles,
   targetGroups,
-  cognitoISP
+  cognitoISP,
 ) => {
   console.log("Validating group creation permission:", {
     requesterRoles,
@@ -216,7 +216,7 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
     const validation = await validateGroupCreationPermission(
       requesterRoles,
       groups,
-      cognitoISP
+      cognitoISP,
     );
     if (!validation.isValid) {
       throw new Error(`RBAC Validation Failed: ${validation.error}`);
@@ -232,7 +232,7 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
   });
 
   const params = {
-    Username: data["email"].replace("@", "_").replace(".", "_").toLowerCase(),
+    Username: data["email"].trim(),
     ...(!data.notify && { MessageAction: "SUPPRESS" }),
     TemporaryPassword: generatePassword(true, true, true, true, 10), //data.password,
     UserAttributes: attributes,
@@ -245,10 +245,17 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
 
   if (item) {
     if (groups && groups.length > 0) {
-      try {
-        await assignApplications(groups, item.Username, cognitoISP);
-      } catch (err) {
-        console.log("create user - assignApplications/groups Error:", err);
+      groups = groups.filter((group) => group !== "SA");
+      if (groups.length > 0 && groups.includes("SPA")) {
+        groups = ["SPA"];
+      }
+
+      if (groups.length > 0) {
+        try {
+          await assignApplications(groups, item.Username, cognitoISP);
+        } catch (err) {
+          console.log("create user - assignApplications/groups Error:", err);
+        }
       }
     }
 
@@ -289,7 +296,10 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
 };
 
 // Export function to get available TA groups for frontend use
-export const getAvailableTAGroupsForRole = async (requesterRoles, cognitoISP) => {
+export const getAvailableTAGroupsForRole = async (
+  requesterRoles,
+  cognitoISP,
+) => {
   if (!requesterRoles || requesterRoles.length === 0) {
     return { groups: [], error: "No requester roles provided" };
   }
