@@ -189,9 +189,9 @@ export const handler = async (event) => {
         requesterRoles = ["SPA"];
       } else {
         // Keep the first TA_XXX role found
-        const taRole = requesterRoles.find((role) => role.startsWith("TA_"));
+        const taRole = requesterRoles.filter((role) => role.startsWith("TA_"));
         if (taRole) {
-          requesterRoles = [taRole];
+          requesterRoles = taRole;
         }
       }
 
@@ -239,11 +239,11 @@ export const handler = async (event) => {
             requesterRoles = ["SPA"];
           } else {
             // Keep the first TA_XXX role found
-            const taRole = requesterRoles.find((role) =>
+            const taRole = requesterRoles.filter((role) =>
               role.startsWith("TA_"),
             );
             if (taRole) {
-              requesterRoles = [taRole];
+              requesterRoles = taRole;
             }
           }
 
@@ -335,9 +335,9 @@ export const handler = async (event) => {
         requesterRoles = ["SPA"];
       } else {
         // Keep the first TA_XXX role found
-        const taRole = requesterRoles.find((role) => role.startsWith("TA_"));
+        const taRole = requesterRoles.filter((role) => role.startsWith("TA_"));
         if (taRole) {
-          requesterRoles = [taRole];
+          requesterRoles = taRole;
         }
       }
 

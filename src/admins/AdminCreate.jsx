@@ -16,6 +16,7 @@ export const AdminCreate = () => {
 
     let groupChoices = data ? data : [];
     groupChoices = groupChoices.filter(item => item !== "SA")
+    console.log ("in admin create - groupChoices", groupChoices)
     groupChoices = groupChoices.map(item => ({ id: item.id, name: item.group }));
 
     return (

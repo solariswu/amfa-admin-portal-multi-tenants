@@ -35,6 +35,13 @@ export const AdminEdit = () => {
     sort: { field: "createdAt", order: "DESC" },
   });
 
+  // remove "SA" from data array
+  const filteredData = data ? data.filter((item) => item.group !== "SA") : [];
+
+  const groupChoices = filteredData
+    ? filteredData.map((item) => ({ id: item.id, name: item.group }))
+    : [];
+
   const formValidation = (values) => {
     const errors = {};
 
@@ -54,10 +61,6 @@ export const AdminEdit = () => {
       <ListButton />
     </TopToolbar>
   );
-
-  const groupChoices = data
-    ? data.map((item) => ({ id: item.id, name: item.group }))
-    : [];
 
   return (
     <>
