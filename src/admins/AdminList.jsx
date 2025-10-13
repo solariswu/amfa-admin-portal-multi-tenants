@@ -146,7 +146,7 @@ export const AdminList = (props) => {
           <FunctionField
             label="State"
             render={(record) =>
-              `${record.enabled ? record.status : "Disabled"}`
+              `${record.enabled ? (record.status === 'EXTERNAL_PROVIDER' ? "Super Admin" : record.status) : "Disabled"}`
             }
           />
           <FunctionField
