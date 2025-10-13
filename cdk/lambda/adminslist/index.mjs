@@ -248,7 +248,7 @@ export const handler = async (event) => {
           }
 
           const availableGroups =
-            await getAvailableTAGroupsForRole(requesterRoles);
+            await getAvailableTAGroupsForRole(requesterRoles, cognitoISP);
 
           return {
             statusCode: 200,

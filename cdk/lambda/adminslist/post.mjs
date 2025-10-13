@@ -21,6 +21,7 @@ const getAvailableTAGroups = async (cognitoISP) => {
 const validateGroupCreationPermission = async (
   requesterRoles,
   targetGroups,
+  cognitoISP
 ) => {
   console.log("Validating group creation permission:", {
     requesterRoles,
@@ -35,7 +36,7 @@ const validateGroupCreationPermission = async (
     return { isValid: false, error: "No target groups specified" };
   }
 
-  const availableTAGroups = await getAvailableTAGroups();
+  const availableTAGroups = await getAvailableTAGroups(cognitoISP);
 
   // Check if requester has SA or SPA role
   const hasSA = requesterRoles.includes("SA");
@@ -215,6 +216,7 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
     const validation = await validateGroupCreationPermission(
       requesterRoles,
       groups,
+      cognitoISP
     );
     if (!validation.isValid) {
       throw new Error(`RBAC Validation Failed: ${validation.error}`);
@@ -287,12 +289,12 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
 };
 
 // Export function to get available TA groups for frontend use
-export const getAvailableTAGroupsForRole = async (requesterRoles) => {
+export const getAvailableTAGroupsForRole = async (requesterRoles, cognitoISP) => {
   if (!requesterRoles || requesterRoles.length === 0) {
     return { groups: [], error: "No requester roles provided" };
   }
 
-  const availableTAGroups = await getAvailableTAGroups();
+  const availableTAGroups = await getAvailableTAGroups(cognitoISP);
 
   // Check if requester has SA or SPA role
   const hasSA = requesterRoles.includes("SA");

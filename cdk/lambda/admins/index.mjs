@@ -111,7 +111,9 @@ const validateAdminOperationPermission = async (
 
 // Extract requester roles from JWT claims (optimized)
 const extractRequesterRoles = (jwtClaims) => {
-  const groups = jwtClaims?.["cognito:groups"];
+  let groups = jwtClaims?.["cognito:groups"];
+  if (!groups) return [];
+  if (typeof groups === "string") groups = groups.match(/[^\[\]\s]+/g)
   return Array.isArray(groups) ? groups.filter(isValidRole) : [];
 };
 

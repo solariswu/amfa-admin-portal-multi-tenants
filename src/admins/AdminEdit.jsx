@@ -23,7 +23,6 @@ import {
   TopToolbar,
   ListButton,
   TextField,
-  BooleanInput,
   DateInput,
   AutocompleteInput,
 } from "react-admin";
