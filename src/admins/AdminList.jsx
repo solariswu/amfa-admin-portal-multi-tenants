@@ -151,7 +151,7 @@ export const AdminList = (props) => {
           />
           <FunctionField
             label=""
-            render={(record) => <UserListMenu record={record} />}
+            render={(record) => record.groups.includes("SA") ? "" : <UserListMenu record={record} />}
           />
         </Datagrid>
       </List>

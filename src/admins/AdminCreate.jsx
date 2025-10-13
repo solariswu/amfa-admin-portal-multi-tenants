@@ -14,7 +14,9 @@ export const AdminCreate = () => {
         }
     );
 
-    const groupChoices = data ? data.filter(item => item !== "SA").map(item => ({ id: item.id, name: item.group })) : [];
+    let groupChoices = data ? data : [];
+    groupChoices = groupChoices.filter(item => item !== "SA")
+    groupChoices = groupChoices.map(item => ({ id: item.id, name: item.group }));
 
     return (
         <Create title="Invite User" redirect="show">
@@ -47,7 +49,7 @@ export const AdminCreate = () => {
                                 type="email"
                                 source="email"
                                 autoComplete="email"
-                                parse={(v) => v ? v.toLowerCase(): ''}
+                                parse={(v) => v ? v.toLowerCase() : ''}
                             />
                         </Grid>
                         <Grid item xs={0} sm={6} md={6} lg={8} />
