@@ -181,11 +181,38 @@ export const handler = async (event) => {
 
       let requesterRoles = jwtPayload["cognito:groups"];
       console.log("POST requester roles:", requesterRoles);
+      let saIdPs = jwtPayload["identities"];
 
+      if (saIdPs) {
+        saIdPs = saIdPs.filter(
+          (identity) => identity.providerName === "SuperUserAdmin",
+        );
+      }
       // Prioritize roles: SA > SPA > TA_XXX
       if (requesterRoles.includes("SA")) {
-        requesterRoles = ["SA"];
-      } else if (requesterRoles.includes("SPA")) {
+        if (saIdPs && saIdPs.length > 0) {
+          requesterRoles = ["SA"];
+        } else {
+          return {
+            statusCode: 403,
+            headers: {
+              "Access-Control-Allow-Headers":
+                "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
+              "Access-Control-Expose-Headers": "Content-Range",
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Credentials": true,
+            },
+            body: JSON.stringify({
+              type: "exception",
+              message: "Super Admin issuer value does not match",
+            }),
+          };
+        }
+      }
+
+      if (requesterRoles.includes("SPA")) {
         requesterRoles = ["SPA"];
       } else {
         // Keep the first TA_XXX role found
@@ -247,8 +274,10 @@ export const handler = async (event) => {
             }
           }
 
-          const availableGroups =
-            await getAvailableTAGroupsForRole(requesterRoles, cognitoISP);
+          const availableGroups = await getAvailableTAGroupsForRole(
+            requesterRoles,
+            cognitoISP,
+          );
 
           return {
             statusCode: 200,
