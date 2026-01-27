@@ -24,10 +24,13 @@ export const postResData = async (payload, dynamodb) => {
 			},
 			samlproxy: {
 				BOOL: payload.samlproxy
+			},
+			org_id: {
+				S: payload.org_id || 'default' // Default to 'default' if not provided
 			}
 		},
 		ReturnConsumedCapacity: 'TOTAL',
-		TableName: process.env.AMFATENANT_TABLE,
+		TableName: `amfa-${this.account}-${this.region}-tenanttable`,
 	};
 
 	const item = await dynamodb.send(new PutItemCommand(params));

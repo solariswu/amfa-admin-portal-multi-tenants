@@ -4,6 +4,61 @@ import postResData from "./post.mjs";
 import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
 const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
 
+// Extract requester roles from JWT
+const extractRequesterRoles = (authHeader) => {
+  if (!authHeader) return [];
+  
+  try {
+    const jwt = authHeader.replace('Bearer ', '');
+    const jwtBase64Url = jwt.split(".")[1];
+    const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jwtBuffer = Buffer.from(jwtBase64, "base64");
+    const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
+    
+    let groups = jwtPayload["cognito:groups"];
+    if (!groups) return [];
+    if (typeof groups === "string") groups = groups.match(/[^\[\]\s]+/g);
+    
+    return Array.isArray(groups) ? groups : [];
+  } catch (error) {
+    console.error('Error extracting roles from JWT:', error);
+    return [];
+  }
+};
+
+// Filter tenants based on requester role and org_id
+const filterTenantsByRole = (tenants, requesterRoles) => {
+  console.log('Filtering tenants by role:', {
+    totalTenants: tenants.length,
+    requesterRoles
+  });
+  
+  if (!requesterRoles || requesterRoles.length === 0) {
+    console.log('No roles found, returning empty list');
+    return [];
+  }
+  
+  // SA can see all tenants
+  if (requesterRoles.includes("SA")) {
+    console.log('SA role - returning all tenants');
+    return tenants;
+  }
+  
+  // SPA_xxx can only see tenants in their org
+  const spaRole = requesterRoles.find(role => role.startsWith("SPA_"));
+  if (spaRole) {
+    const orgId = spaRole.substring(4); // Extract org from SPA_default
+    console.log(`${spaRole} role - filtering for org_id: ${orgId}`);
+    const filtered = tenants.filter(tenant => tenant.org_id === orgId);
+    console.log(`Filtered to ${filtered.length} tenants`);
+    return filtered;
+  }
+  
+  // TA_xxx cannot see tenant list
+  console.log('TA role - returning empty list');
+  return [];
+};
+
 export const handler = async (event) => {
 
     console.info("EVENT\n" + JSON.stringify(event, null, 2))
@@ -13,7 +68,7 @@ export const handler = async (event) => {
     try {
 
         if (event.requestContext.http.method === 'POST' && (!event.queryStringParameters || !event.queryStringParameters.page)) {
-            // invite new user
+            // Create new tenant
             const body = JSON.parse(event.body);
             console.log('POST data: ', body);
             const postResult = await postResData(body.data, dynamodb);
@@ -32,12 +87,13 @@ export const handler = async (event) => {
             };
         }
         else {
+            // List tenants - with org-based filtering
             let NextToken = event.body ? event.body : "";
 
             const params = {
                 ConsistentRead: true,
                 ReturnConsumedCapacity: 'TOTAL',
-                TableName: process.env.AMFATENANT_TABLE,
+                TableName: `amfa-${this.account}-${this.region}-tenanttable`,
             }
 
             console.info('params', params);
@@ -46,7 +102,7 @@ export const handler = async (event) => {
             NextToken = data.LastEvaluatedKey
 
             let resData = [];
-            console.log ('fetched data:', data);
+            console.log('fetched data:', data);
             if (data && data.Items && data.Items.length > 0) {
                 resData = data.Items.map(item => {
                     return {
@@ -56,9 +112,16 @@ export const handler = async (event) => {
                         url: item.url.S,
                         endUserSpUrl: item.endUserSpUrl.S,
                         samlproxy: item.samlproxy?.BOOL,
+                        org_id: item.org_id?.S || 'default', // Include org_id, default to 'default'
                     }
                 });
             }
+            
+            // Extract requester roles and filter tenants
+            const authHeader = event.headers?.authorization || event.headers?.Authorization;
+            const requesterRoles = extractRequesterRoles(authHeader);
+            resData = filterTenantsByRole(resData, requesterRoles);
+            
             // getList of React-admin expects response to have header called 'Content-Range'.
             // when we add new header in response, we have to acknowledge it, so 'Access-Control-Expose-Headers'
             const page = parseInt(event.queryStringParameters.page);

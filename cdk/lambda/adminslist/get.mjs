@@ -15,7 +15,7 @@ export const getResData = async (item, cognitoISP) => {
     if (data.Groups && data.Groups.length > 0) {
       groups = data.Groups.map((item) => item.GroupName);
       groups = groups.filter(
-        (item) => item.startsWith("TA_") || item === "SA" || item == "SPA",
+        (item) => item.startsWith("TA_") || item === "SA" || item.startsWith("SPA_"),
       );
     }
   } catch (err) {

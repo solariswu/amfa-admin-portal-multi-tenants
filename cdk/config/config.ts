@@ -5,9 +5,7 @@ export const service_name = "amfa";
 export const project_name = 'adminportal';
 export const current_stage = 'dev';
 
-export const tenant_id = process.env.TENANT_ID;
-
-export const amfa_api_base = process.env.TENANT_ID + '.' + process.env.ROOT_DOMAIN_NAME;
+export const amfa_api_base = process.env.ROOT_DOMAIN_NAME;
 
 export const suapi_endpoint = 'https://api.su.apersona-id.com/register/'
 
@@ -22,13 +20,8 @@ export const stage_config = {
 	},
 }
 
-export const AMFACONFIG_TABLE = `amfa-${stage_config[current_stage].env.account}-${stage_config[current_stage].env.region}-configtable`;
-export const AMFATENANT_TABLE = `amfa-${stage_config[current_stage].env.account}-${stage_config[current_stage].env.region}-tenanttable`;
-
-export const app_userpool_info = {
-	needCreate: false,
-	userPoolId: process.env.APP_USERPOOL_ID,
-}
+export const AMFACONFIG_TABLE = `${service_name}-${stage_config[current_stage].env.account}-${stage_config[current_stage].env.region}-configtable`;
+export const AMFATENANT_TABLE = `${service_name}-${stage_config[current_stage].env.account}-${stage_config[current_stage].env.region}-tenanttable`;
 
 export const hostedUI_domain_prefix = `${project_name}`;
 // export const apps_urls = [process.env.EXTRA_APP_URL ? process.env.EXTRA_APP_URL : ''];

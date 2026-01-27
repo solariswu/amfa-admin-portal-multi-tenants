@@ -1,6 +1,7 @@
 import {
 	GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
+import { validateTenantAccess } from '/opt/nodejs/admin-auth/index.mjs';
 
 const postURL = `https://api.${process.env.AMFA_BASE_URL}/amfa`;
 
@@ -16,13 +17,23 @@ const fetchAmfaSecrets = async (id) => fetch(postURL, {
 	}),
 });
 
-export const getResData = async (id, cognitoToken, dynamodb) => {
+export const getResData = async (event, dynamodb) => {
+	const tenantId = event.pathParameters?.id;
+
+	// Validate access using lambda layer
+	const authResult = await validateTenantAccess(event, tenantId);
+	
+	if (!authResult.authorized) {
+		const error = new Error(authResult.error || 'Access Denied');
+		error.statusCode = authResult.statusCode || 403;
+		throw error;
+	}
 
 	//fetch tenant Info
 	const params = {
-		TableName: process.env.AMFATENANT_TABLE,
+		TableName: `amfa-${this.account}-${this.region}-tenanttable`,
 		Key: {
-			id: { S: id },
+			id: { S: tenantId },
 		},
 	};
 
@@ -33,7 +44,7 @@ export const getResData = async (id, cognitoToken, dynamodb) => {
 	const item = result.Item;
 
 
-	const res = await fetchAmfaSecrets(id);
+	const res = await fetchAmfaSecrets(tenantId);
 	const resJson = await res.json();
 
 	console.log('get secret json from amfa', resJson);
@@ -43,7 +54,7 @@ export const getResData = async (id, cognitoToken, dynamodb) => {
 	if (item && item.name) {
 
 		return {
-			id,
+			id: tenantId,
 			name: decodeURIComponent(item.name.S),
 			contact: item.contact.S,
 			url: item.url.S,
@@ -55,6 +66,7 @@ export const getResData = async (id, cognitoToken, dynamodb) => {
 			endUserSpWebClientId: process.env.SP_PORTAL_CLIENT_ID,
 			endUserSpUserpoolId: process.env.USER_POOL_ID,
 			endUserSpOauthDomain: smtp.oauthdomain,
+			org_id: item.org_id?.S || 'default', // Include org_id in response
 			...smtp,
 			// branding: item.branding,
 		};

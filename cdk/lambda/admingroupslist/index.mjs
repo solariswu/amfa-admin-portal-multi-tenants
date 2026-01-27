@@ -13,9 +13,9 @@ const cognitoISP = new CognitoIdentityProviderClient({
 const Limit = 60;
 
 // Valid role types for filtering
-const VALID_ROLES = ["SA", "SPA"];
+const VALID_ROLES = ["SA"];
 const isValidRole = (role) =>
-  VALID_ROLES.includes(role) || role.startsWith("TA_");
+  VALID_ROLES.includes(role) || role.startsWith("SPA_") || role.startsWith("TA_");
 
 // Extract requester roles from JWT claims
 const extractRequesterRoles = (jwtClaims) => {
@@ -37,17 +37,18 @@ const filterGroupsByRBAC = (groups, requesterRoles) => {
     return [];
   }
 
-  // SA can get all groups including SA/SPA/TA_xxx
+  // SA can get all groups including SA/SPA_yyy/TA_xxx
   if (requesterRoles.includes("SA")) {
     console.log("SA user - returning all groups");
     return groups;
   }
 
-  // SPA would not get "SA" among the groups
-  if (requesterRoles.includes("SPA")) {
+  // SPA_yyy would not get "SA" among the groups
+  const spaRole = requesterRoles.find(role => role.startsWith("SPA_"));
+  if (spaRole) {
     const filteredGroups = groups.filter((group) => group.GroupName !== "SA");
     console.log(
-      "SPA user - filtered out SA group:",
+      `${spaRole} user - filtered out SA group:`,
       filteredGroups.map((g) => g.GroupName),
     );
     return filteredGroups;
@@ -126,7 +127,7 @@ export const handler = async (event) => {
         if (
           item.GroupName.startsWith("TA_") ||
           item.GroupName === "SA" ||
-          item.GroupName === "SPA"
+          item.GroupName.startsWith("SPA_")
         ) {
           filtered.push(item);
         }

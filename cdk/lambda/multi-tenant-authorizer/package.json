@@ -1,0 +1,14 @@
+{
+  "name": "multi-tenant-authorizer",
+  "version": "1.0.0",
+  "description": "Multi-tenant Lambda authorizer for API Gateway",
+  "main": "index.mjs",
+  "type": "module",
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

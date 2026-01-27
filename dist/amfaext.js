@@ -1,6 +1,5 @@
-export const AdminPortalUserPoolId="eu-west-1_ibOks955Q"
-export const AdminPortalClientId="4kbb8vveiplsjqdb8onaldv7nq"
-export const AdminHostedUIURL="https://adminportal-amfa-dev004.auth.eu-west-1.amazoncognito.com"
-export const SPPortalUrl="https://apersona.netlify.app"
-export const ProjectRegion="eu-west-1"
-export const AdminPortalDomainName="adminportal.amfa.aws-amplify.dev"
+export const AdminPortalUserPoolId="us-east-1_zBhRU54kc"
+export const AdminPortalClientId="7f3ochbc0s6km76noas8vev188"
+export const AdminHostedUIURL="https://adminportal-noij58.auth.us-east-1.amazoncognito.com"
+export const ProjectRegion='us-east-1'
+export const AdminPortalDomainName='adminportal.amfa2.aws-amplify.dev'

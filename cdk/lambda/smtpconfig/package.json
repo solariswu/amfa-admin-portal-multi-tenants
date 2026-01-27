@@ -4,7 +4,7 @@
 	"description": "",
 	"main": "index.mjs",
 	"scripts": {
-		"build": "rm -rf dist && esbuild ./*.mjs --entry-names=./[name] --bundle --minify --sourcemap --platform=node --target=node20.16 --outdir=dist --external:@aws-sdk/*",
+    "build": "rm -rf dist && esbuild ./*.mjs --entry-names=./[name] --bundle --minify --sourcemap --platform=node --target=node20.16 --outdir=dist --external:@aws-sdk/* --external:admin-auth",
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"author": "",
@@ -13,6 +13,6 @@
 		"esbuild": ">=0.25.0"
 	},
 	"dependencies": {
-		"nodemailer": "^6.9.4"
+		"nodemailer": "^7.0.12"
 	}
 }

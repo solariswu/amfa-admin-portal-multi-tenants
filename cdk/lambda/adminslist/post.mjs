@@ -1,90 +1,15 @@
 import {
   AdminCreateUserCommand,
   AdminAddUserToGroupCommand,
-  ListGroupsCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-// Dummy API to get available TA groups - replace with actual API call
-const getAvailableTAGroups = async (cognitoISP) => {
-  // This is a placeholder - replace with actual API call
-  const data = await cognitoISP.send(
-    new ListGroupsCommand({ UserPoolId: process.env.USERPOOL_ID }),
-  );
-  if (data.Groups && data.Groups.length > 0) {
-    data.Groups.filter((group) => group.GroupName.startsWith("TA_"));
-    return data.Groups.map((group) => group.GroupName);
-  }
-  return [];
-};
+// Import shared auth utilities from lambda layer
+import {
+  validateGroupCreationPermission,
+  getAvailableTAGroupsForRole,
+} from "admin-auth";
 
-// RBAC validation function
-const validateGroupCreationPermission = async (
-  requesterRoles,
-  targetGroups,
-  cognitoISP,
-) => {
-  console.log("Validating group creation permission:", {
-    requesterRoles,
-    targetGroups,
-  });
-
-  if (!requesterRoles || requesterRoles.length === 0) {
-    return { isValid: false, error: "No requester roles provided" };
-  }
-
-  if (!targetGroups || targetGroups.length === 0) {
-    return { isValid: false, error: "No target groups specified" };
-  }
-
-  const availableTAGroups = await getAvailableTAGroups(cognitoISP);
-
-  // Check if requester has SA or SPA role
-  const hasSA = requesterRoles.includes("SA");
-  const hasSPA = requesterRoles.includes("SPA");
-
-  // Get all TA_xxx roles that the requester has
-  const requesterTARoles = requesterRoles.filter(
-    (role) => role.startsWith("TA_") && availableTAGroups.includes(role),
-  );
-
-  for (const targetGroup of targetGroups) {
-    let isAuthorized = false;
-    let errorMessage = "";
-
-    if (hasSA) {
-      // SA can create users with SPA or any TA_XXX group
-      if (targetGroup === "SPA" || availableTAGroups.includes(targetGroup)) {
-        isAuthorized = true;
-      } else {
-        errorMessage = `SA cannot create user with group: ${targetGroup}. Allowed groups: SPA, ${availableTAGroups.join(", ")}`;
-      }
-    } else if (hasSPA) {
-      // SPA can create users with SPA or any TA_XXX group
-      if (targetGroup === "SPA" || availableTAGroups.includes(targetGroup)) {
-        isAuthorized = true;
-      } else {
-        errorMessage = `SPA cannot create user with group: ${targetGroup}. Allowed groups: SPA, ${availableTAGroups.join(", ")}`;
-      }
-    } else if (requesterTARoles.length > 0) {
-      // TA_XXX users can create users with any of their TA_XXX groups
-      if (requesterTARoles.includes(targetGroup)) {
-        isAuthorized = true;
-      } else {
-        errorMessage = `Requester with roles [${requesterTARoles.join(", ")}] can only create users with groups: ${requesterTARoles.join(", ")}. Cannot create user with group: ${targetGroup}`;
-      }
-    } else {
-      // No valid roles found
-      errorMessage = `Requester roles [${requesterRoles.join(", ")}] are not authorized to create users`;
-    }
-
-    if (!isAuthorized) {
-      return { isValid: false, error: errorMessage };
-    }
-  }
-
-  return { isValid: true };
-};
-
+// Assign groups/applications to user
 const assignApplications = async (groups, username, cognitoISP) => {
   return Promise.all(
     groups.map((group) =>
@@ -99,6 +24,7 @@ const assignApplications = async (groups, username, cognitoISP) => {
   );
 };
 
+// Password generation helper functions
 function getRandomUpper() {
   return String.fromCharCode(Math.floor(Math.random() * 26) + 65);
 }
@@ -127,28 +53,25 @@ function generatePassword(lower, upper, number, symbol, length) {
   console.log(lower, upper, number, symbol, length);
   let generatedPassword = "";
   const typesCount = lower + upper + number + symbol;
-  //Object.values(item)[0] 获取数组中每个对象的值
-  // 筛选出值为true(状态为选中的)的大写英文字母、小写英文字母、数字、特殊符号
   const typesArr = [{ lower }, { upper }, { number }, { symbol }].filter(
     (item) => Object.values(item)[0],
   );
-  // 状态都为未选中，则都为flase，加起来就是0；直接返回
+  
   if (typesCount === 0) {
     return false;
   }
 
   for (let i = 0; i < length; i += typesCount) {
-    // 遍历循环状态为选中的对象组成的数组，获取每个对象的属性名，根据属性名调用各自生成函数
     typesArr.forEach((type) => {
       const funcName = Object.keys(type)[0];
       generatedPassword += randomFunc[funcName]();
     });
   }
-  // 截取选择的密码位数长度的随机密码
-  const finalPassword = generatedPassword.slice(0, length);
-  return finalPassword;
+  
+  return generatedPassword.slice(0, length);
 }
 
+// Main function to create user
 export const postResData = async (data, cognitoISP, requesterRoles = []) => {
   console.log("postResData Input:", { data, requesterRoles });
 
@@ -164,10 +87,8 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
       case "name":
       case "middle_name":
       case "picture":
-      case "profile":
       case "gender":
       case "birthdate":
-        // case 'address':
         if (data[key]) {
           attributes.push({ Name: key.toLowerCase(), Value: data[key] });
         }
@@ -187,7 +108,6 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
           attributes.push({ Name: "phone_number_verified", Value: "true" });
         }
         break;
-      // case 'email_verified':
       case "phone_number_verified":
         if (data[key]) {
           attributes.push({
@@ -211,7 +131,7 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
     return key;
   });
 
-  // RBAC validation
+  // RBAC validation using shared function from lambda layer
   if (groups.length > 0) {
     const validation = await validateGroupCreationPermission(
       requesterRoles,
@@ -223,7 +143,7 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
     }
   }
 
-  // to allow using email login, amfa has to set user email to verified
+  // Set email as verified to allow email login
   attributes.push({ Name: "email_verified", Value: "true" });
 
   attributes.push({
@@ -234,7 +154,7 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
   const params = {
     Username: data["email"].trim(),
     ...(!data.notify && { MessageAction: "SUPPRESS" }),
-    TemporaryPassword: generatePassword(true, true, true, true, 10), //data.password,
+    TemporaryPassword: generatePassword(true, true, true, true, 10),
     UserAttributes: attributes,
     UserPoolId: process.env.USERPOOL_ID,
     DesiredDeliveryMediums: ["EMAIL"],
@@ -245,18 +165,26 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
 
   if (item) {
     if (groups && groups.length > 0) {
-      groups = groups.filter((group) => group !== "SA");
-      if (groups.length > 0 && groups.includes("SPA")) {
-        groups = ["SPA"];
+      // Remove SA from groups (SA users should not be created this way)
+      let finalGroups = groups.filter((group) => group !== "SA");
+      
+      // Prioritize SPA_yyy roles - if multiple SPA_yyy roles, keep only the first one
+      const spaGroups = finalGroups.filter(group => group.startsWith("SPA_"));
+      if (spaGroups.length > 0) {
+        finalGroups = [spaGroups[0]];
       }
 
-      if (groups.length > 0) {
+      if (finalGroups.length > 0) {
         try {
-          await assignApplications(groups, item.Username, cognitoISP);
+          await assignApplications(finalGroups, item.Username, cognitoISP);
         } catch (err) {
           console.log("create user - assignApplications/groups Error:", err);
         }
       }
+      
+      // Update groups for response
+      groups.length = 0;
+      groups.push(...finalGroups);
     }
 
     const directMappingArrtibutes = [
@@ -271,9 +199,8 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
       "name",
       "middle_name",
       "picture",
-      "profile",
       "gender",
-      "birthdate" /*, 'address'*/,
+      "birthdate",
     ];
     const filteredAttributs = item.Attributes.filter((el) =>
       directMappingArrtibutes.includes(el.Name),
@@ -282,56 +209,25 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
       filteredAttributs.map((el) => [el.Name, el.Value]),
     );
 
+    // Get email_verified and phone_number_verified from attributes
+    const emailVerifiedAttr = item.Attributes.find(el => el.Name === "email_verified");
+    const phoneVerifiedAttr = item.Attributes.find(el => el.Name === "phone_number_verified");
+
     return {
       id: item.Username,
       username: item.Username,
       enabled: item.Enabled,
       status: item.UserStatus,
-      email_verified: email_verified === "true" ? true : false,
-      phone_number_verified: phone_number_verified === "true" ? true : false,
-      groups: groups ? groups : null,
+      email_verified: emailVerifiedAttr?.Value === "true",
+      phone_number_verified: phoneVerifiedAttr?.Value === "true",
+      groups: groups.length > 0 ? groups : null,
       ...result,
     };
   }
 };
 
 // Export function to get available TA groups for frontend use
-export const getAvailableTAGroupsForRole = async (
-  requesterRoles,
-  cognitoISP,
-) => {
-  if (!requesterRoles || requesterRoles.length === 0) {
-    return { groups: [], error: "No requester roles provided" };
-  }
-
-  const availableTAGroups = await getAvailableTAGroups(cognitoISP);
-
-  // Check if requester has SA or SPA role
-  const hasSA = requesterRoles.includes("SA");
-  const hasSPA = requesterRoles.includes("SPA");
-
-  // Get all TA_xxx roles that the requester has
-  const requesterTARoles = requesterRoles.filter(
-    (role) => role.startsWith("TA_") && availableTAGroups.includes(role),
-  );
-
-  if (hasSA) {
-    // SA can create users with SPA or any TA_XXX group
-    return { groups: ["SPA", ...availableTAGroups] };
-  } else if (hasSPA) {
-    // SPA can create users with SPA or any TA_XXX group
-    return { groups: ["SPA", ...availableTAGroups] };
-  } else if (requesterTARoles.length > 0) {
-    // TA_XXX users can create users with any of their TA_XXX groups
-    // Remove duplicates and sort for consistency
-    const uniqueGroups = [...new Set(requesterTARoles)].sort();
-    return { groups: uniqueGroups };
-  } else {
-    return {
-      groups: [],
-      error: `Requester roles [${requesterRoles.join(", ")}] cannot create users`,
-    };
-  }
-};
+// Now using shared function from lambda layer
+export { getAvailableTAGroupsForRole } from "admin-auth";
 
 export default postResData;

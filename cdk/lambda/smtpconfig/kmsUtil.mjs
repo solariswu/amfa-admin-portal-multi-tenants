@@ -8,20 +8,20 @@ const client = new SecretsManagerClient({
 	region: process.env.AWS_REGION,
 });
 
-export const setSMTP = async (secret) => {
+export const setSMTP = async (tenantId, secret) => {
 	const response = await client.send(
 		new UpdateSecretCommand({
-			SecretId: `apersona/${process.env.TENANT_ID}/smtp`,
+			SecretId: `apersona/${tenantId}/smtp`,
 			SecretString: JSON.stringify(secret),
 		})
 	);
 	return response;
 }
 
-export const getSMTP = async () => {
+export const getSMTP = async (tenantId) => {
 	const response = await client.send(
 		new GetSecretValueCommand({
-			SecretId: `apersona/${process.env.TENANT_ID}/smtp`,
+			SecretId: `apersona/${tenantId}/smtp`,
 		})
 	);
 	const secret = JSON.parse(response.SecretString);

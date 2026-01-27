@@ -33,14 +33,14 @@ export const handler = async (event) => {
 	try {
 		switch (event.requestContext.http.method) {
 			case 'GET':
-				const getResult = await getResData(event.pathParameters?.id, event.headers.authorization, dynamodb);
+				const getResult = await getResData(event, dynamodb);
 				return response(200, JSON.stringify({ data: getResult }));
 			case 'PUT':
 				const payload = JSON.parse(event.body);
-				const putResult = await putResData(payload.data, payload.previousData, event.headers.authorization, dynamodb);
+				const putResult = await putResData(event, payload.data, payload.previousData, dynamodb);
 				return response(200, JSON.stringify({ data: putResult }));
 			case 'DELETE':
-				const deleteResult = await deleteResData(event.pathParameters?.id, event.headers.authorization, dynamodb);
+				const deleteResult = await deleteResData(event, dynamodb);
 				return response(200, JSON.stringify({ data: deleteResult }));
 			case 'OPTIONS':
 				return response(200, JSON.stringify({ data: 'ok' }));
@@ -49,14 +49,13 @@ export const handler = async (event) => {
 		}
 	}
 	catch (e) {
-		console.log('Catch an error: ', e)
+		console.log('Catch an error: ', e);
+		const statusCode = e.statusCode || 500;
+		const message = e.message || 'Service Error';
+		return {
+			statusCode,
+			headers,
+			body: JSON.stringify({ type: 'exception', message }),
+		};
 	}
-
-	return {
-		statusCode: 500,
-		headers,
-		body: JSON.stringify({ type: 'exception', message: 'Service Error' }),
-	};
 }
-
-

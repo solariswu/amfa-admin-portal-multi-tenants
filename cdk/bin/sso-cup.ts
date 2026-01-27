@@ -30,6 +30,7 @@ new AppStack(app, 'SSO-CUPStack', {
 	siteCertificate: certStack222.siteCertificate,
 	apiCertificate: apiCertStack.siteCertificate,
 	hostedUIDomain: hostedUI_domain_prefix,
+	hostedZone: certStack222.hostedZone,
 	...stage_config[current_stage],
 	crossRegionReferences: stage_config[current_stage].env.region !== 'us-east-1',
 	assetsPath: '../../dist',

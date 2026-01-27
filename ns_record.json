@@ -1,0 +1,19 @@
+{
+    "Changes": [{
+        "Action": "CREATE",
+        "ResourceRecordSet": {
+            "Name": "adminportal.amfa2.aws-amplify.dev",
+            "Type": "NS",
+            "TTL": 300,
+            "ResourceRecords": [
+                { "Value": "ns-1999.awsdns-57.co.uk" }
+,
+                { "Value": "ns-215.awsdns-26.com" }
+,
+                { "Value": "ns-1334.awsdns-38.org" }
+,
+                { "Value": "ns-1003.awsdns-61.net" }
+            ]
+        }
+    }]
+}

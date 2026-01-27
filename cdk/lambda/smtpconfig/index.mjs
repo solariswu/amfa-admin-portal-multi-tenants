@@ -1,33 +1,30 @@
-
 import { getSMTP, setSMTP } from './kmsUtil.mjs';
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
 
 export const handler = async (event) => {
 
     console.info("EVENT\n" + JSON.stringify(event, null, 2))
     console.log('event.requestContext.http.method: ', event.requestContext.http.method);
 
-    const headers = {
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Requested-With',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'OPTIONS,GET,PUT,POST',
-    };
+    // 1. Extract tenant_id from request
+    const tenantId = getTenantIdFromRequest(event);
+    
+    if (!tenantId) {
+        return createResponse(400, { error: 'tenant_id required in request' });
+    }
 
-    const response = (statusCode = 200, body) => {
-        console.log('return with:', {
-            statusCode,
-            headers,
-            body,
-        });
-        return {
-            statusCode,
-            headers,
-            body,
-        };
-    };
+    // 2. Validate authorization
+    const authResult = await validateTenantAccess(event, tenantId);
+    
+    if (!authResult.authorized) {
+        return createResponse(authResult.statusCode, { error: authResult.error });
+    }
+    
+    console.log(`Authorized access for tenant ${tenantId}, role: ${authResult.role}`);
 
     const testSMTP = async (secret) => {
         const nodemailer = require("nodemailer");
-        const transporter = nodemailer.createTransport({
+        const transporter = nodemailer.createTransporter({
             host: secret.host,
             port: secret.port,
             secure: secret.secure === 'true' || (secret.secure ? secret.secure : false),
@@ -58,44 +55,34 @@ export const handler = async (event) => {
 
             console.log("Message sent: %s", info.messageId);
 
-            return response(200, JSON.stringify({ data: 'OK' }));
+            return createResponse(200, { data: 'OK' });
         } catch (error) {
             console.log('smtp test error message:', error.message);
             console.log('smtp test error stack:', error.stack);
-            return response(500, JSON.stringify({ data: error.message ? error.message : 'message not sent' }));
+            return createResponse(500, { data: error.message ? error.message : 'message not sent' });
         }
     }
-
-
-    const cognitoToken = event.headers.authorization;
 
     try {
         switch (event.requestContext.http.method) {
             case 'GET':
-                const getResult = await getSMTP();
-                return response(200, JSON.stringify({ data: getResult }));
+                const getResult = await getSMTP(tenantId);
+                return createResponse(200, { data: getResult });
             case 'PUT':
 				const payload = JSON.parse(event.body);
-				const putResult = await setSMTP(payload.data);
-				return response(200, JSON.stringify({ data: putResult }));
+				const putResult = await setSMTP(tenantId, payload.data);
+				return createResponse(200, { data: putResult });
             case 'POST':
 				const body = JSON.parse(event.body);
 				return await testSMTP(body.data);
             case 'OPTIONS':
-                return response(200, JSON.stringify({ data: 'ok' }));
+                return createResponse(200, { data: 'ok' });
             default:
-                return response(404, JSON.stringify({ data: 'Not Found' }));
+                return createResponse(404, { data: 'Not Found' });
         }
     }
     catch (e) {
         console.log('Catch an error: ', e)
+        return createResponse(500, { type: 'exception', message: 'Service Error' });
     }
-
-    return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({ type: 'exception', message: 'Service Error' }),
-    };
 }
-
-

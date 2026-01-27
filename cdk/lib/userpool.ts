@@ -9,30 +9,34 @@ import {
   UserPoolIdentityProviderOidc,
 } from "aws-cdk-lib/aws-cognito";
 
-import { Duration, Fn } from "aws-cdk-lib";
+import { Duration, Fn, CustomResource } from "aws-cdk-lib";
+import { Function, Runtime, Code } from "aws-cdk-lib/aws-lambda";
+import { Provider } from "aws-cdk-lib/custom-resources";
+import { Policy, PolicyStatement } from "aws-cdk-lib/aws-iam";
 
 import { AppStackProps } from "./application";
 import {
   hostedUI_domain_prefix,
-  app_userpool_info,
-  enduser_portal_callbackurls,
-  enduser_portal_logouturls,
   stage_config,
   current_stage,
 } from "../config";
+
+export interface TenantUserPoolInfo {
+  tenantId: string;
+  userPoolId: string;
+  samlClient: UserPoolClient;
+  enduserPortalClient: UserPoolClient;
+  spPortalDomain: string;
+}
 
 export class SSOUserPool {
   scope: Construct;
   region: string | undefined;
   account: string | undefined;
-  appUserPoolId: string;
+  // appUserPoolIds: { [tenantId: string]: string } = {};
+  tenantUserPools: TenantUserPoolInfo[] = [];
   adminUserpool: UserPool;
-  appUserPool: UserPool;
-  hostedUIClient: UserPoolClient;
-  backEndUserClient: UserPoolClient;
   adminClient: UserPoolClient;
-  samlClient: UserPoolClient;
-  enduserPortalClient: UserPoolClient;
   domainName: string;
 
   constructor(scope: Construct, props: AppStackProps) {
@@ -41,25 +45,43 @@ export class SSOUserPool {
     this.region = props.env?.region;
     this.domainName = props.domainName ? props.domainName : "";
 
+    // Create admin userpool (single for all tenants)
     this.adminUserpool = this.createUserPool("Admin");
     this.adminClient = this.addAdminClient();
+  }
 
-    const userpoolid = Fn.importValue("useridppoolid").toString();
-    // this.appUserPoolId = userpoolid
-    this.appUserPoolId =
-      userpoolid && userpoolid.length > 1
-        ? userpoolid
-        : app_userpool_info.userPoolId
-          ? app_userpool_info.userPoolId
-          : "";
-
-    this.samlClient = this.addSamlClient();
-    this.enduserPortalClient = this.addEnduserPortalClient();
-
+  // Create SAML client for a specific tenant
+  public createSamlClientForTenant(
+    tenantId: string,
+    userPoolId: string,
+  ): UserPoolClient {
+    return new UserPoolClient(this.scope, `samlproxyclient-${tenantId}`, {
+      userPool: UserPool.fromUserPoolId(
+        this.scope,
+        `appuserpool-${tenantId}`,
+        userPoolId,
+      ),
+      generateSecret: true,
+      authFlows: {
+        userSrp: true,
+      },
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: true,
+        },
+        scopes: [OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.EMAIL],
+        callbackUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
+        logoutUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
+      },
+      userPoolClientName: `samlproxyClient-${tenantId}`,
+      supportedIdentityProviders: [
+        UserPoolClientIdentityProvider.custom("apersona"),
+      ],
+    });
   }
 
   private createUserPool = (type: string) => {
-    return new UserPool(this.scope, `SSO-${type}-userpool}`, {
+    return new UserPool(this.scope, `SSO-${type}-userpool`, {
       userPoolName: `aPersona-AWS-Identity-SSO-${type}-UserPool`,
       // use self sign-in is disable by default
       selfSignUpEnabled: false,
@@ -154,58 +176,59 @@ export class SSOUserPool {
     });
   }
 
-  private addSamlClient() {
-    return new UserPoolClient(this.scope, "samlproxyclient", {
-      userPool: UserPool.fromUserPoolId(
-        this.scope,
-        "appuserpool",
-        this.appUserPoolId,
-      ),
-      generateSecret: true,
-      authFlows: {
-        userSrp: true,
-      },
-      oAuth: {
-        flows: {
-          authorizationCodeGrant: true,
-        },
-        scopes: [OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.EMAIL],
-        callbackUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
-        logoutUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
-      },
-      userPoolClientName: "samlproxyClient",
-      supportedIdentityProviders: [
-        UserPoolClientIdentityProvider.custom("apersona"),
-      ],
-    });
-  }
+  // // Import admin users using custom resource
+  // private importAdminUsers() {
+  //   // Create Lambda function for importing users
+  //   const importUsersLambda = new Function(this.scope, "ImportUsersLambda", {
+  //     runtime: Runtime.NODEJS_22_X,
+  //     handler: "index.handler",
+  //     timeout: Duration.minutes(5),
+  //     code: Code.fromAsset("cdk/lambda/importusers"),
+  //   });
 
-  private addEnduserPortalClient() {
-    return new UserPoolClient(this.scope, "spportalclient", {
-      userPool: UserPool.fromUserPoolId(
-        this.scope,
-        "appuserpool2",
-        this.appUserPoolId,
-      ),
-      generateSecret: false,
-      authFlows: {
-        userSrp: true,
-      },
-      oAuth: {
-        flows: {
-          authorizationCodeGrant: true,
-        },
-        scopes: [OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.EMAIL],
-        callbackUrls: enduser_portal_callbackurls,
-        logoutUrls: enduser_portal_logouturls,
-      },
-      idTokenValidity: Duration.hours(8),
-      accessTokenValidity: Duration.hours(8),
-      refreshTokenValidity: Duration.minutes(481),
-      userPoolClientName: "amfasys_spPortalClient",
-      supportedIdentityProviders: [
-        UserPoolClientIdentityProvider.custom("apersona"),
-      ],
-    });
-  }
+  //   // Grant Cognito permissions to the Lambda
+  //   importUsersLambda.role?.attachInlinePolicy(
+  //     new Policy(this.scope, "ImportUsersPolicy", {
+  //       statements: [
+  //         new PolicyStatement({
+  //           actions: [
+  //             "cognito-idp:AdminCreateUser",
+  //             "cognito-idp:AdminSetUserPassword",
+  //             "cognito-idp:AdminGetUser",
+  //             "cognito-idp:AdminUpdateUserAttributes",
+  //           ],
+  //           resources: [this.adminUserpool.userPoolArn],
+  //         }),
+  //       ],
+  //     }),
+  //   );
+
+  //   // Create custom resource provider
+  //   const importUsersProvider = new Provider(
+  //     this.scope,
+  //     "ImportUsersProvider",
+  //     {
+  //       onEventHandler: importUsersLambda,
+  //     },
+  //   );
+
+  //   // Default admin users to import
+  //   const defaultAdminUsers = [
+  //     {
+  //       username: "admin@example.com",
+  //       email: "admin@example.com",
+  //       temporaryPassword: "TempPass123!",
+  //       permanentPassword: "AdminPass123!",
+  //     },
+  //   ];
+
+  //   // Create custom resource to import users
+  //   new CustomResource(this.scope, "ImportUsersCustomResource", {
+  //     serviceToken: importUsersProvider.serviceToken,
+  //     properties: {
+  //       UserPoolId: this.adminUserpool.userPoolId,
+  //       Users: JSON.stringify(defaultAdminUsers),
+  //     },
+  //   });
+  // }
 }

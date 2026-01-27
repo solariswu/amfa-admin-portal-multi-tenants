@@ -1,7 +1,6 @@
 //AWS configurations
 
 import {
-  DescribeUserPoolCommand,
   CognitoIdentityProviderClient,
   ListUsersCommand,
   ListUsersInGroupCommand,
@@ -9,6 +8,12 @@ import {
 
 import postResData, { getAvailableTAGroupsForRole } from "./post.mjs";
 import getResData from "./get.mjs";
+
+// Import shared auth utilities from lambda layer
+import {
+  extractRolesFromEvent,
+  prioritizeRoles,
+} from "admin-auth";
 
 const cognitoISP = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION,
@@ -41,10 +46,10 @@ const getUsers = async (
       return { users: [], paginationToken: null, statusCode: 403 };
     }
 
-    // TA can only list own TA users
+    // TA and SPA_yyy can only list users in their allowed groups
     if (
       requesterRoles[0] !== "SA" &&
-      requesterRoles[0] !== "SPA" &&
+      !requesterRoles[0].startsWith("SPA_") &&
       !requesterRoles.includes(userGroup)
     ) {
       return { users: [], paginationToken: null, statusCode: 403 };
@@ -60,7 +65,7 @@ const getUsers = async (
       if (userGroup) {
         params = {
           UserPoolId: process.env.USERPOOL_ID,
-          Limit: requiredUserNum - listUsersData.Users.length, // Number of users to display per page
+          Limit: requiredUserNum - listUsersData.Users.length,
           GroupName: userGroup,
           ...(paginationToken && { NextToken: paginationToken }),
         };
@@ -85,7 +90,7 @@ const getUsers = async (
 
         params = {
           UserPoolId: process.env.USERPOOL_ID,
-          Limit: requiredUserNum - listUsersData.Users.length, // Number of users to display per page
+          Limit: requiredUserNum - listUsersData.Users.length,
           ...(paginationToken && { PaginationToken: paginationToken }),
           ...(filterString && { Filter: filterString }),
         };
@@ -106,21 +111,18 @@ const getUsers = async (
           usersData = await transform(usersData.Users);
           usersData = { Users: usersData };
         } catch (error) {
-          // listuser error right after delete.
-          // use this to avoid error in listuser response.
           console.log("err", error);
         }
 
         if (!userGroup) {
-          // filter out "SA" users when requesterRole is "SPA"
-          if (requesterRoles[0] === "SPA") {
+          // filter out "SA" users when requesterRole is "SPA_yyy"
+          if (requesterRoles[0].startsWith("SPA_")) {
             usersData.Users = usersData.Users.filter(
               (user) => user.groups.includes("SA") === false,
             );
           }
-          // filter out "TA" users when requesterRole is "TA"
-          if (requesterRoles[0] !== "SPA" && requesterRoles[0] !== "SA") {
-            // judge wehther user.groups has intersection against requestRole array
+          // filter out users not in requester's groups when requesterRole is "TA_xxx"
+          if (!requesterRoles[0].startsWith("SPA_") && requesterRoles[0] !== "SA") {
             usersData.Users = usersData.Users.filter((user) =>
               user.groups.some((group) => requesterRoles.includes(group)),
             );
@@ -155,12 +157,47 @@ const getUsers = async (
   return { users: resData, paginationToken, statusCode: 200 };
 };
 
+// Helper to extract and prioritize roles from JWT header
+const extractRolesFromHeader = (authHeader) => {
+  try {
+    const jwt = authHeader;
+    const jwtBase64Url = jwt.split(".")[1];
+    const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jwtBuffer = Buffer.from(jwtBase64, "base64");
+    const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
+
+    let requesterRoles = jwtPayload["cognito:groups"];
+    if (!requesterRoles || requesterRoles.length === 0) {
+      return [];
+    }
+
+    // For SA role, check identities
+    if (requesterRoles.includes("SA")) {
+      let saIdPs = jwtPayload["identities"];
+      if (saIdPs) {
+        saIdPs = saIdPs.filter(
+          (identity) => identity.providerName === "SuperUserAdmin",
+        );
+        if (saIdPs && saIdPs.length > 0) {
+          return ["SA"];
+        } else {
+          throw new Error("Super Admin issuer value does not match");
+        }
+      }
+    }
+
+    // Use prioritizeRoles from shared layer
+    return prioritizeRoles(requesterRoles);
+  } catch (error) {
+    console.log("Error extracting roles from header:", error);
+    throw error;
+  }
+};
+
 export const handler = async (event) => {
   console.info("EVENT\n" + JSON.stringify(event, null, 2));
 
-  //To get the list of Users in aws Cognito
   let filter = {};
-
   let errMsg = { type: "exception", message: "Service Error" };
 
   try {
@@ -173,54 +210,8 @@ export const handler = async (event) => {
       console.log("POST data: ", body);
 
       // Extract requester roles from JWT for RBAC validation
-      const jwt = event.headers["authorization"];
-      const jwtBase64Url = jwt.split(".")[1];
-      const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
-      const jwtBuffer = Buffer.from(jwtBase64, "base64");
-      const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
-
-      let requesterRoles = jwtPayload["cognito:groups"];
+      const requesterRoles = extractRolesFromHeader(event.headers["authorization"]);
       console.log("POST requester roles:", requesterRoles);
-      let saIdPs = jwtPayload["identities"];
-
-      if (saIdPs) {
-        saIdPs = saIdPs.filter(
-          (identity) => identity.providerName === "SuperUserAdmin",
-        );
-      }
-      // Prioritize roles: SA > SPA > TA_XXX
-      if (requesterRoles.includes("SA")) {
-        if (saIdPs && saIdPs.length > 0) {
-          requesterRoles = ["SA"];
-        } else {
-          return {
-            statusCode: 403,
-            headers: {
-              "Access-Control-Allow-Headers":
-                "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
-              "Access-Control-Expose-Headers": "Content-Range",
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Credentials": true,
-            },
-            body: JSON.stringify({
-              type: "exception",
-              message: "Super Admin issuer value does not match",
-            }),
-          };
-        }
-      }
-
-      if (requesterRoles.includes("SPA")) {
-        requesterRoles = ["SPA"];
-      } else {
-        // Keep the first TA_XXX role found
-        const taRole = requesterRoles.filter((role) => role.startsWith("TA_"));
-        if (taRole) {
-          requesterRoles = taRole;
-        }
-      }
 
       const postResult = await postResData(
         body.data,
@@ -251,28 +242,7 @@ export const handler = async (event) => {
         // Handle request for available groups
         if (event.queryStringParameters.getAvailableGroups === "true") {
           // Extract requester roles from JWT
-          const jwt = event.headers["authorization"];
-          const jwtBase64Url = jwt.split(".")[1];
-          const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
-          const jwtBuffer = Buffer.from(jwtBase64, "base64");
-          const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
-
-          let requesterRoles = jwtPayload["cognito:groups"];
-
-          // Prioritize roles: SA > SPA > TA_XXX
-          if (requesterRoles.includes("SA")) {
-            requesterRoles = ["SA"];
-          } else if (requesterRoles.includes("SPA")) {
-            requesterRoles = ["SPA"];
-          } else {
-            // Keep the first TA_XXX role found
-            const taRole = requesterRoles.filter((role) =>
-              role.startsWith("TA_"),
-            );
-            if (taRole) {
-              requesterRoles = taRole;
-            }
-          }
+          const requesterRoles = extractRolesFromHeader(event.headers["authorization"]);
 
           const availableGroups = await getAvailableTAGroupsForRole(
             requesterRoles,
@@ -342,33 +312,9 @@ export const handler = async (event) => {
         }
       }
 
-      // get user group info from jwt
-      const jwt = event.headers["authorization"];
-      const jwtBase64Url = jwt.split(".")[1];
-
-      const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
-      const jwtBuffer = Buffer.from(jwtBase64, "base64");
-
-      const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
-      //get userpool id
-      const oidc_issuer = jwtPayload["iss"].split("/").pop();
-
-      let requesterRoles = jwtPayload["cognito:groups"];
-      console.log("jwtPayload", jwtPayload);
-      console.log("roles got", requesterRoles);
-
-      // Prioritize roles: SA > SPA > TA_XXX
-      if (requesterRoles.includes("SA")) {
-        requesterRoles = ["SA"];
-      } else if (requesterRoles.includes("SPA")) {
-        requesterRoles = ["SPA"];
-      } else {
-        // Keep the first TA_XXX role found
-        const taRole = requesterRoles.filter((role) => role.startsWith("TA_"));
-        if (taRole) {
-          requesterRoles = taRole;
-        }
-      }
+      // Extract requester roles from JWT
+      const requesterRoles = extractRolesFromHeader(event.headers["authorization"]);
+      console.log("GET requester roles:", requesterRoles);
 
       const { users, paginationToken, statusCode } = await getUsers(
         queryGroup,
@@ -453,12 +399,11 @@ export const handler = async (event) => {
         errMsg = { type: "exception", message: "Invalid parameter" };
         break;
       default:
-        errMsg = { type: "exception", message: "Service Error" };
+        errMsg = { type: "exception", message: e.message || "Service Error" };
         break;
     }
   }
 
-  // TODO implement
   const response = {
     statusCode: 500,
     headers: {

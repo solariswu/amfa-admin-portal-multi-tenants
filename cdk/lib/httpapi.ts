@@ -9,35 +9,35 @@ import { Bucket, BucketAccessControl } from 'aws-cdk-lib/aws-s3';
 import { Policy, PolicyStatement} from 'aws-cdk-lib/aws-iam';
 import { CorsHttpMethod, HttpApi, HttpMethod, DomainName } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
+import { HttpUserPoolAuthorizer, HttpLambdaAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { AttributeType, BillingMode, Table } from 'aws-cdk-lib/aws-dynamodb';
-import { Function, Code, Runtime } from 'aws-cdk-lib/aws-lambda';
-import { UserPool } from 'aws-cdk-lib/aws-cognito';
+import { Function, Code, Runtime, LayerVersion } from 'aws-cdk-lib/aws-lambda';
+
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { ARecord, HostedZone, RecordTarget } from 'aws-cdk-lib/aws-route53';
 import { ApiGatewayv2DomainProperties } from 'aws-cdk-lib/aws-route53-targets';
 
 import { SSOUserPool } from './userpool';
 import { AMFACONFIG_TABLE, AMFATENANT_TABLE, current_stage, project_name, service_name,
-    stage_config, samlproxy_api_url, tenant_id, samlproxy_metadata_url, samlproxy_reload_url, samlproxy_clean_url } from '../config';
+    stage_config, samlproxy_api_url, samlproxy_metadata_url, samlproxy_reload_url, samlproxy_clean_url } from '../config';
 
 
 export class SSOApiGateway {
     scope: Construct;
     region: string | undefined;
     account: string | undefined;
-    api: HttpApi;
+    api!: HttpApi;
     certificateArn: string;
     domainName: string;
     hostedUIDomain: string
     hostedZoneId: string;
-    authorizor: HttpUserPoolAuthorizer;
-    endUserAuthorizor: HttpUserPoolAuthorizer;
+    authorizor!: HttpUserPoolAuthorizer;
+    multiTenantAuthorizor!: HttpLambdaAuthorizer;
     amfaBaseUrl: string;
     spinfoTable: Table;
     importUsersJobTable: Table;
-    importUsersWorkerLambda: Function;
-    imoprtUsersJobsS3Bucket: Bucket;
+    importUsersWorkerLambda!: Function;
+    imoprtUsersJobsS3Bucket!: Bucket;
 
     constructor(scope: Construct, props: AppStackProps) {
         this.scope = scope;
@@ -58,11 +58,10 @@ export class SSOApiGateway {
     private createImportUsersWorkerLambda = (userPoolId : string) => {
         const workerlambda = new Function(this.scope, 'importusersworkerlambda', {
             functionName: `${project_name}-importusersworker-${this.region}`,
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: Code.fromAsset(path.join(__dirname, `/../lambda/importusersworker/dist`)),
             environment: {
-                TENANT_ID: tenant_id ? tenant_id: '',
                 IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
                 IMPORTUSERS_WORKER_LAMBDA: `${project_name}-importusersworker-${this.region}`,
             },
@@ -85,7 +84,7 @@ export class SSOApiGateway {
                     }),
                     new PolicyStatement({
                         resources: [
-                            this.userPoolIdToArn(userPoolId)
+                            `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/*`,
                         ],
                         actions: [
                             'cognito-idp:AdminCreateUser',
@@ -132,26 +131,19 @@ export class SSOApiGateway {
             userPool.adminUserpool,
             { userPoolClients: [userPool.adminClient] }
         );
-
-        this.endUserAuthorizor = new HttpUserPoolAuthorizer(
-            'httpapi_authorizor_enduser',
-            UserPool.fromUserPoolId(this.scope, 'appuserpool3', userPool.appUserPoolId),
-            { userPoolClients: [userPool.enduserPortalClient] }
-        );
     }
 
     public attachMetadataS3(s3bucket: Bucket) {
 
         const metadataListFunction = new Function(this.scope, 'spmetadataslist_function', {
             code: Code.fromAsset(path.join(__dirname, '../lambda/spmetadataslist')),
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
             timeout: Duration.minutes(3),
             environment: {
                 S3_BASE_URL: `${stage_config[current_stage].domainName}`,
                 BUCKET: s3bucket.bucketName,
                 SERVICE_NAME: service_name,
-                TENANT_ID: tenant_id ? tenant_id : 'unknowntid',
             }
         });
 
@@ -167,14 +159,13 @@ export class SSOApiGateway {
 
         const metadataFunction = new Function(this.scope, 'spmetadatas_function', {
             code: Code.fromAsset(path.join(__dirname, '../lambda/spmetadatas')),
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
             timeout: Duration.minutes(3),
             environment: {
                 S3_BASE_URL: `${stage_config[current_stage].domainName}`,
                 BUCKET: s3bucket.bucketName,
                 SERVICE_NAME: service_name,
-                TENANT_ID: tenant_id ? tenant_id : 'unknowntid',
             }
         });
 
@@ -269,7 +260,7 @@ export class SSOApiGateway {
     public createAdminApiEndpoints(userPoolId: string, samlClientId: string, samlClientSecrect: string,
         spPortalClientId: string, userPoolDomain: string, adminUserPoolId: string
     ) {
-        const resourceTypes = ['users', 'groups', 'idps', 'appclients', 'importusers', 'admins', 'admingroups'];
+        const resourceTypes = ['users', 'groups', 'idps', 'appclients', 'admins', 'admingroups'];
 
         this.imoprtUsersJobsS3Bucket = new Bucket(this.scope, `${project_name}-${this.region}-${current_stage}-ImportUsersBucket`, {
                 bucketName: `${this.account}-${this.region}-${project_name}-importusersjobs`,
@@ -369,8 +360,15 @@ export class SSOApiGateway {
             authorizer: this.authorizor,
         });
 
-        // amfa fecth configs api
-        const fetchAmfaConfigLambda = this.createFetchAmfaConfigLambda(AMFACONFIG_TABLE, userPoolId);
+        // Create auth layer once and reuse it
+        const authLayer = new LayerVersion(this.scope, 'AdminAuthLayer', {
+            code: Code.fromAsset(path.join(__dirname, '/../lambda-layers/auth-layer')),
+            compatibleRuntimes: [Runtime.NODEJS_22_X],
+            description: 'Shared authorization utilities for admin portal multi-tenant support',
+        });
+
+        // amfa fetch configs api
+        const fetchAmfaConfigLambda = this.createFetchAmfaConfigLambda(authLayer);
 
         this.api.addRoutes({
             path: '/amfaconfig',
@@ -383,7 +381,7 @@ export class SSOApiGateway {
         });
 
         // amfa smtp config api
-        const smtplambda = this.createSmtpConfigLambda();
+        const smtplambda = this.createSmtpConfigLambda(authLayer);
 
         this.api.addRoutes({
             path: '/smtpconfig',
@@ -395,7 +393,7 @@ export class SSOApiGateway {
             authorizer: this.authorizor,
         })
 
-        const brandingsLambda = this.createBrandingLambda('brandings');
+        const brandingsLambda = this.createBrandingLambda('brandings', authLayer);
 
         this.api.addRoutes({
             path: '/brandings/{id}',
@@ -407,7 +405,7 @@ export class SSOApiGateway {
             authorizer: this.authorizor,
         })
 
-        const brandingslistLambda = this.createBrandingLambda('brandingslist');
+        const brandingslistLambda = this.createBrandingLambda('brandingslist', authLayer);
 
         this.api.addRoutes({
             path: '/brandings',
@@ -420,7 +418,43 @@ export class SSOApiGateway {
         })
     }
 
-    public createEndUserPortalApiEndpoints(userPoolId: string) {
+    public createMultiTenantAuthorizer(tenantReader: any) {
+        // Create multi-tenant custom authorizer lambda
+        const multiTenantAuthorizerLambda = new Function(this.scope, 'MultiTenantAuthorizer', {
+            runtime: Runtime.NODEJS_22_X,
+            handler: 'index.handler',
+            code: Code.fromAsset(path.join(__dirname, '/../lambda/multi-tenant-authorizer')),
+            environment: {
+                TENANT_USER_POOLS: tenantReader.getTenantsJson(), // Pass the CDK token directly
+                REGION: this.region || 'us-east-1',
+            },
+            timeout: Duration.seconds(30),
+        });
+
+        // Grant permissions to describe user pools and read from DynamoDB
+        multiTenantAuthorizerLambda.role?.attachInlinePolicy(
+            new Policy(this.scope, 'MultiTenantAuthorizerPolicy', {
+                statements: [
+                    new PolicyStatement({
+                        actions: ['cognito-idp:DescribeUserPool'],
+                        resources: [`arn:aws:cognito-idp:${this.region}:*:userpool/*`],
+                    }),
+                ],
+            })
+        );
+
+        // Create the Lambda authorizer
+        this.multiTenantAuthorizor = new HttpLambdaAuthorizer(
+            'MultiTenantHttpAuthorizer',
+            multiTenantAuthorizerLambda
+        );
+    }
+
+    public createEndUserPortalApiEndpoints(userPoolId: string, tenantReader?: any) {
+        // Create multi-tenant authorizer if tenant reader is provided
+        if (tenantReader) {
+            this.createMultiTenantAuthorizer(tenantReader);
+        }
         const serviceProvidersListLambda = this.createServicePrvoiderLambda('serviceproviderslist', userPoolId, this.spinfoTable);
         // 👇 add route for GET /resource
         this.api.addRoutes({
@@ -430,7 +464,7 @@ export class SSOApiGateway {
                 `list-usrportal-splist-integration`,
                 serviceProvidersListLambda,
             ),
-            authorizer: this.endUserAuthorizor,
+            authorizer: tenantReader ? this.multiTenantAuthorizor : undefined,
         });
 
         const customServiceProvidersListLambda = this.createUserCustomSPSLambda('usercustomsps', userPoolId);
@@ -442,14 +476,14 @@ export class SSOApiGateway {
                 `list-usrportal-usercustomsps-integration`,
                 customServiceProvidersListLambda,
             ),
-            authorizer: this.endUserAuthorizor,
+            authorizer: tenantReader ? this.multiTenantAuthorizor : undefined,
         });
     }
 
     private createServicePrvoiderLambda(lambdaName: string, userPoolId: string, spinfoTable: Table) {
 
         let lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}/dist`)),
             environment: {
@@ -504,7 +538,7 @@ export class SSOApiGateway {
     private createUserCustomSPSLambda(lambdaName: string, userPoolId: string) {
 
         let lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}`)),
             environment: {
@@ -548,7 +582,7 @@ export class SSOApiGateway {
         samlClientSecret: string, userPoolId: string, spinfoTable: Table) {
 
         let lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}/dist`)),
             environment: {
@@ -603,11 +637,10 @@ export class SSOApiGateway {
     ) {
 
         const lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
             code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}`)),
             environment: {
-                AMFATENANT_TABLE: tableName,
                 AMFA_BASE_URL: this.amfaBaseUrl,
                 SAMLPROXY_API_URL: samlproxy_api_url,
                 SAMLPROXY_RELOAD_URL: samlproxy_reload_url,
@@ -618,7 +651,6 @@ export class SSOApiGateway {
                 ROOT_DOMAIN_NAME: process.env.ROOT_DOMAIN_NAME ? process.env.ROOT_DOMAIN_NAME : '',
                 SP_PORTAL_CLIENT_ID: spPortalClientId,
                 END_USER_SP_OAUTH_DOMAIN: `https://${userPoolDomain}.auth.${this.region}.amazoncognito.com/`,
-                TENANT_ID: tenant_id ? tenant_id : 'unknowntid',
             },
             timeout: Duration.minutes(5)
         });
@@ -662,18 +694,18 @@ export class SSOApiGateway {
         return lambda;
     };
 
-    private createFetchAmfaConfigLambda(tableName: string, userpoolId: string) {
+    private createFetchAmfaConfigLambda(authLayer: LayerVersion) {
         const lambdaName = 'amfaconfig';
 
         const lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
-            code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}/dist`)),
+            code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}`)),
+            layers: [authLayer],
             environment: {
-                AMFACONFIG_TABLE: tableName,
-                TENANT_ID: tenant_id ? tenant_id : 'unknowntid',
+                AMFACONFIG_TABLE,
                 AMFATENANT_TABLE,
-                USERPOOL_ID: userpoolId,
+                // USERPOOL_ID removed - Lambda gets it from tenant table via auth layer
             },
             timeout: Duration.minutes(5)
         });
@@ -683,11 +715,13 @@ export class SSOApiGateway {
                 statements: [
                     new PolicyStatement({
                         resources: [
-                            this.tableNameToArn(tableName),
+                            this.tableNameToArn(AMFACONFIG_TABLE),
                             this.tableNameToArn(AMFATENANT_TABLE),
+                            `${this.tableNameToArn(AMFATENANT_TABLE)}/index/*`, // Grant access to GSI
                         ],
                         actions: [
                             'dynamodb:GetItem',
+                            'dynamodb:Query', // For GSI queries
                         ],
                     })
                 ],
@@ -699,7 +733,7 @@ export class SSOApiGateway {
                 statements: [
                     new PolicyStatement({
                         resources: [
-                            this.userPoolIdToArn(userpoolId),
+                            `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/*`,
                         ],
                         actions: [
                             'cognito-idp:DescribeUserPool',
@@ -826,11 +860,12 @@ export class SSOApiGateway {
         };
 
         if (resourceType !== 'importusers') {
+            // Use wildcard for user pool resources to handle multiple tenants efficiently
             statements.push(
                 new PolicyStatement({
                     actions: isList ? actions[resourceType as keyof typeof actions].list : actions[resourceType as keyof typeof actions].normal,
                     resources: [
-                        userPoolArn,
+                        `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/*`,
                     ],
                 })
             );
@@ -907,7 +942,7 @@ export class SSOApiGateway {
         if (lambdaName === 'importuserslist') {
 
             const lambda = new Function(this.scope, lambdaName, {
-                runtime: Runtime.NODEJS_20_X,
+                runtime: Runtime.NODEJS_22_X,
                 handler: "index.handler",
                 code: Code.fromAsset(
                     path.join(__dirname, `/../lambda/${lambdaName}`),
@@ -930,7 +965,7 @@ export class SSOApiGateway {
         }
         else {
             const lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: "index.handler",
             code: Code.fromAsset(
                 path.join(__dirname, `/../lambda/${lambdaName}`),
@@ -953,22 +988,24 @@ export class SSOApiGateway {
         }
     };
 
-    private createSmtpConfigLambda() {
+    private createSmtpConfigLambda(authLayer: LayerVersion) {
 
         const lambdaName = 'smtpconfig';
 
         let lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
-            code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}/dist`)),
+            code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}`)),
+            layers: [authLayer],
             environment: {
-                TENANT_ID: tenant_id ? tenant_id : 'unknowntid',
+                AMFATENANT_TABLE,
+                // TENANT_ID removed - Lambda gets tenant_id from request
             },
             timeout: Duration.minutes(5)
         });
 
         lambda.role?.attachInlinePolicy(
-            new Policy(this.scope, `${lambdaName}-policy`, {
+            new Policy(this.scope, `${lambdaName}-policy-secrets`, {
                 statements: [
                     new PolicyStatement({
                         resources: ['*'],
@@ -981,39 +1018,65 @@ export class SSOApiGateway {
             })
         );
 
+        lambda.role?.attachInlinePolicy(
+            new Policy(this.scope, `${lambdaName}-policy-dynamo`, {
+                statements: [
+                    new PolicyStatement({
+                        resources: [
+                            this.tableNameToArn(AMFATENANT_TABLE),
+                            `${this.tableNameToArn(AMFATENANT_TABLE)}/index/*`,
+                        ],
+                        actions: [
+                            'dynamodb:GetItem',
+                            'dynamodb:Query',
+                        ],
+                    })
+                ],
+            })
+        );
+
         return lambda;
     }
 
-    private createBrandingLambda(lambdaName: string) {
+    private createBrandingLambda(lambdaName: string, authLayer: LayerVersion) {
 
+        // Multi-tenant branding Lambda - tenant_id comes from request
         let lambda = new Function(this.scope, lambdaName, {
-            runtime: Runtime.NODEJS_20_X,
+            runtime: Runtime.NODEJS_22_X,
             handler: 'index.handler',
-            code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}/dist`)),
+            code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}`)),
+            layers: [authLayer],
             environment: {
-                TENANT_ID: tenant_id ? tenant_id : 'unknowntid',
-                SPPORTAL_BUCKETNAME: `${this.account}-amfa-${tenant_id}-login`,
-                ADMINPORTAL_BUCKETNAME: `${this.account}-${this.region}-adminportal-amfa-web`,
+                AMFATENANT_TABLE,
+                SPPORTAL_BUCKET_PREFIX: `${this.account}-${service_name}`,
+                ADMINPORTAL_BUCKETNAME: `${this.account}-${this.region}-adminportal-${service_name}-web`,
                 SPPORTAL_DISTRIBUTION_ID: process.env.SPPORTAL_DISTRIBUTION_ID ? process.env.SPPORTAL_DISTRIBUTION_ID : '',
-                ADMINPORTAL_DISTRIBUTION_ID: process.env.SPPORTAL_DISTRIBUTION_ID ? process.env.SPPORTAL_DISTRIBUTION_ID : '',
+                ADMINPORTAL_DISTRIBUTION_ID: process.env.ADMINPORTAL_DISTRIBUTION_ID ? process.env.ADMINPORTAL_DISTRIBUTION_ID : '',
                 SP_PORTAL_URL: process.env.SP_PORTAL_URL ? process.env.SP_PORTAL_URL : '',
             },
             timeout: Duration.minutes(5)
         });
 
         lambda.role?.attachInlinePolicy(
-            new Policy(this.scope, `${lambdaName}-policy`, {
+            new Policy(this.scope, `${lambdaName}-policy-s3`, {
                 statements: [
                     new PolicyStatement({
                         resources: [
-                            `arn:aws:s3:::${this.account}-amfa-${tenant_id}-login/*`,
-                            `arn:aws:s3:::${this.account}-amfa-${tenant_id}-amfa/*`,
+                            `arn:aws:s3:::${this.account}-${service_name}-*-login/*`,
+                            `arn:aws:s3:::${this.account}-${service_name}-*-amfa/*`,
                         ],
                         actions: [
                             "s3:GetObject",
                             "s3:PutObject"
                         ],
                     }),
+                ],
+            })
+        );
+
+        lambda.role?.attachInlinePolicy(
+            new Policy(this.scope, `${lambdaName}-policy-cloudfront`, {
+                statements: [
                     new PolicyStatement({
                         resources: [
                             `arn:aws:cloudfront::${this.account}:distribution/${process.env.SPPORTAL_DISTRIBUTION_ID ? process.env.SPPORTAL_DISTRIBUTION_ID : '*'}`,
@@ -1023,6 +1086,24 @@ export class SSOApiGateway {
                             'cloudfront:CreateInvalidation',
                         ],
                     }),
+                ],
+            })
+        );
+
+        lambda.role?.attachInlinePolicy(
+            new Policy(this.scope, `${lambdaName}-policy-dynamo`, {
+                statements: [
+                    new PolicyStatement({
+                        resources: [
+                            this.tableNameToArn(AMFATENANT_TABLE),
+                            `${this.tableNameToArn(AMFATENANT_TABLE)}/index/*`,
+                        ],
+                        actions: [
+                            'dynamodb:GetItem',
+                            'dynamodb:Query',
+                            'dynamodb:Scan',
+                        ],
+                    })
                 ],
             })
         );

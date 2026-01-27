@@ -9,7 +9,7 @@ node_modules
 /coverage
 
 # production
-/build
+/dist
 
 # misc
 .DS_Store
@@ -27,3 +27,7 @@ cdk/bin/*.js
 cdk/lib/*.js
 cdk.out
 cdk/config/*.js
+
+# Lambda build artifacts
+cdk/lambda/*/dist/
+cdk/lambda/*/node_modules/

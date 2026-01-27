@@ -1,6 +1,7 @@
 import {
 	PutItemCommand,
 } from '@aws-sdk/client-dynamodb';
+import { validateTenantAccess } from '/opt/nodejs/admin-auth/index.mjs';
 
 const samlurl = process.env.SAMLPROXY_API_URL;
 const samlReloadUrl = process.env.SAMLPROXY_RELOAD_URL;
@@ -60,8 +61,17 @@ const taggleSaml = async (cognitoToken, enable) => {
 	console.log('samlproxy reload result text', resTxt);
 }
 
-export const putResData = async (payload, previousData, cognitoToken, dynamodb) => {
+export const putResData = async (event, payload, previousData, dynamodb) => {
 	console.log('putResData Input:', payload);
+
+	// Validate access using lambda layer
+	const authResult = await validateTenantAccess(event, payload.id);
+	
+	if (!authResult.authorized) {
+		const error = new Error(authResult.error || 'Access Denied');
+		error.statusCode = authResult.statusCode || 403;
+		throw error;
+	}
 
 	const params = {
 		Item: {
@@ -82,14 +92,19 @@ export const putResData = async (payload, previousData, cognitoToken, dynamodb) 
 			},
 			samlproxy: {
 				BOOL: payload.samlproxy
+			},
+			org_id: {
+				S: payload.org_id || 'default' // Ensure org_id is set
 			}
 		},
 		ReturnConsumedCapacity: 'TOTAL',
-		TableName: process.env.AMFATENANT_TABLE,
+		TableName: `amfa-${this.account}-${this.region}-tenanttable`,
 	};
 
 	const item = await dynamodb.send(new PutItemCommand(params));
 
+	// Get authorization token from event
+	const cognitoToken = event.headers?.authorization || event.headers?.Authorization;
 
 	if (payload.samlproxy !== previousData.samlproxy) {
 		await taggleSaml(cognitoToken, payload.samlproxy)

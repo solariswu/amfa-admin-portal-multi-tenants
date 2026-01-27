@@ -1,82 +1,86 @@
-import {
-	DynamoDBClient,
-	GetItemCommand,
-} from '@aws-sdk/client-dynamodb';
-
+import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { CognitoIdentityProviderClient, DescribeUserPoolCommand } from "@aws-sdk/client-cognito-identity-provider";
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
 
 const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION });
 
-const headers = {
-	'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Requested-With',
-	'Access-Control-Allow-Origin': '*',
-	'Access-Control-Allow-Methods': 'OPTIONS,GET',
-};
-
-const response = (statusCode = 200, body) => {
-	console.log('return with:', {
-		statusCode,
-		headers,
-		body,
-	});
-	return {
-		statusCode,
-		headers,
-		body,
-	};
-};
-
-
 const configs = ['amfaConfigs', 'amfaPolicies'];
 
 export const handler = async (event) => {
+    console.info("EVENT\n" + JSON.stringify(event, null, 2));
 
-	console.info("EVENT\n" + JSON.stringify(event, null, 2))
+    // 1. Extract tenant_id from request
+    const tenantId = getTenantIdFromRequest(event);
+    
+    if (!tenantId) {
+        return createResponse(400, { error: 'tenant_id required in request' });
+    }
 
-	let promises = [];
+    // 2. Validate authorization and get tenant info
+    const authResult = await validateTenantAccess(event, tenantId);
+    
+    if (!authResult.authorized) {
+        return createResponse(authResult.statusCode, { error: authResult.error });
+    }
 
-	configs.forEach(configType => {
-		const params = {
-			TableName: process.env.AMFACONFIG_TABLE,
-			Key: {
-				configtype: { S: configType },
-			},
-		};
-		promises.push(dynamodb.send(new GetItemCommand(params)));
-	});
+    const { userPoolId } = authResult;
+    
+    console.log(`Authorized access for tenant ${tenantId}, userPoolId: ${userPoolId}`);
 
-	const params = {
-		TableName: process.env.AMFATENANT_TABLE,
-		Key: {
-			id: { S: process.env.TENANT_ID },
-		},
-	};
+    // 3. Fetch configs, tenant SAML info, and user pool details
+    let promises = [];
 
-	promises.push(dynamodb.send(new GetItemCommand(params)));
+    // Fetch amfaConfigs and amfaPolicies
+    configs.forEach(configType => {
+        const params = {
+            TableName: process.env.AMFACONFIG_TABLE,
+            Key: {
+                id: { S: tenantId },
+                configtype: { S: configType },
+            },
+        };
+        promises.push(dynamodb.send(new GetItemCommand(params)));
+    });
 
-	promises.push(cognito.send(new DescribeUserPoolCommand({
-		UserPoolId: process.env.USERPOOL_ID,
-	})));
+    // Fetch tenant SAML info
+    const tenantParams = {
+        TableName: process.env.AMFATENANT_TABLE,
+        Key: {
+            id: { S: tenantId },
+        },
+    };
+    promises.push(dynamodb.send(new GetItemCommand(tenantParams)));
 
-	const [configRes, policyRes, samlRes, cognitoRes] = await Promise.allSettled(promises);
+    // Describe user pool to get total user count
+    promises.push(cognito.send(new DescribeUserPoolCommand({
+        UserPoolId: userPoolId,
+    })));
 
-	console.log('samlres', samlRes);
-	console.log('cognitores', cognitoRes);
+    const [configRes, policyRes, tenantRes, cognitoRes] = await Promise.allSettled(promises);
 
-	if (configRes.status === 'rejected' || policyRes.status === 'rejected' || samlRes.status === 'rejected' || cognitoRes.status === 'rejected') {
-		console.log('configres', configRes);
-		console.log('policyres', policyRes);
-		console.log('samlres', samlRes);
-		console.log('cognitores', cognitoRes);
-		return response(500, JSON.stringify({ error: 'Internal server error' }));
-	}
+    console.log('configRes', configRes);
+    console.log('policyRes', policyRes);
+    console.log('tenantRes', tenantRes);
+    console.log('cognitoRes', cognitoRes);
 
-	return response(200, JSON.stringify({
-		amfaConfigs: JSON.parse(configRes.value.Item.value.S),
-		amfaPolicies: JSON.parse(policyRes.value.Item.value.S),
-		samlProxyEnabled: samlRes.value.Item?.samlproxy?.BOOL,
-		totalUserNumber: cognitoRes.value.UserPool.EstimatedNumberOfUsers,
-	}));
+    // Check if any critical queries failed
+    if (configRes.status === 'rejected' || policyRes.status === 'rejected' || 
+        tenantRes.status === 'rejected' || cognitoRes.status === 'rejected') {
+        console.error('One or more queries failed:', {
+            config: configRes.status === 'rejected' ? configRes.reason : 'ok',
+            policy: policyRes.status === 'rejected' ? policyRes.reason : 'ok',
+            tenant: tenantRes.status === 'rejected' ? tenantRes.reason : 'ok',
+            cognito: cognitoRes.status === 'rejected' ? cognitoRes.reason : 'ok',
+        });
+        return createResponse(500, { error: 'Internal server error fetching configurations' });
+    }
 
-}
+    // Parse and return results
+    return createResponse(200, {
+        amfaConfigs: configRes.value.Item?.value?.S ? JSON.parse(configRes.value.Item.value.S) : {},
+        amfaPolicies: policyRes.value.Item?.value?.S ? JSON.parse(policyRes.value.Item.value.S) : {},
+        samlProxyEnabled: tenantRes.value.Item?.samlproxy?.BOOL ?? false,
+        totalUserNumber: cognitoRes.value.UserPool?.EstimatedNumberOfUsers ?? 0,
+    });
+};
