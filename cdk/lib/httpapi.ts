@@ -416,6 +416,34 @@ export class SSOApiGateway {
             ),
             authorizer: this.authorizor,
         })
+
+        // organizations apis - use same Lambda for both routes
+        const organizationsListLambda = this.createLambda(
+            'organizationslist',
+            '',
+            this.getPolicyStatements('', 'organizations', true)
+        );
+        
+        this.api.addRoutes({
+            path: '/organizations',
+            methods: [HttpMethod.DELETE, HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT],
+            integration: new HttpLambdaIntegration(
+                `list-organizations-integration`,
+                organizationsListLambda,
+            ),
+            authorizer: this.authorizor,
+        });
+
+        // Reuse the same Lambda for detail route
+        this.api.addRoutes({
+            path: '/organizations/{id}',
+            methods: [HttpMethod.DELETE, HttpMethod.GET, HttpMethod.POST, HttpMethod.PUT],
+            integration: new HttpLambdaIntegration(
+                'organizations-integration',
+                organizationsListLambda,  // Reuse the same Lambda
+            ),
+            authorizer: this.authorizor,
+        });
     }
 
     public createMultiTenantAuthorizer(tenantReader: any) {
@@ -651,6 +679,8 @@ export class SSOApiGateway {
                 ROOT_DOMAIN_NAME: process.env.ROOT_DOMAIN_NAME ? process.env.ROOT_DOMAIN_NAME : '',
                 SP_PORTAL_CLIENT_ID: spPortalClientId,
                 END_USER_SP_OAUTH_DOMAIN: `https://${userPoolDomain}.auth.${this.region}.amazoncognito.com/`,
+                ACCOUNT: this.account || '',
+                PROVISION_TENANT_FUNCTION_NAME: `${project_name}-provision-tenant-${this.region}`,
             },
             timeout: Duration.minutes(5)
         });
@@ -690,6 +720,30 @@ export class SSOApiGateway {
                 ],
             })
         );
+
+        // Add permissions for tenantslist to invoke provision-tenant and manage Cognito users
+        if (lambdaName === 'tenantslist') {
+            lambda.role?.attachInlinePolicy(
+                new Policy(this.scope, `${lambdaName}-provision-policy`, {
+                    statements: [
+                        new PolicyStatement({
+                            resources: [
+                                `arn:aws:lambda:${this.region}:${this.account}:function:${project_name}-provision-tenant-${this.region}`
+                            ],
+                            actions: ['lambda:InvokeFunction'],
+                        }),
+                        new PolicyStatement({
+                            resources: [`arn:aws:cognito-idp:${this.region}:${this.account}:userpool/*`],
+                            actions: [
+                                'cognito-idp:AdminCreateUser',
+                                'cognito-idp:CreateGroup',
+                                'cognito-idp:AdminAddUserToGroup',
+                            ],
+                        }),
+                    ],
+                })
+            );
+        }
 
         return lambda;
     };
@@ -856,10 +910,26 @@ export class SSOApiGateway {
             importusers: {
                 normal: [],
                 list: []
+            },
+            organizations: {
+                normal: [],
+                list: [
+                    'dynamodb:GetItem',
+                    'dynamodb:PutItem',
+                    'dynamodb:Scan',
+                    'dynamodb:DeleteItem',
+                ]
             }
         };
 
-        if (resourceType !== 'importusers') {
+        if (resourceType === 'organizations') {
+            statements.push(
+                new PolicyStatement({
+                    resources: [this.tableNameToArn(AMFATENANT_TABLE)],
+                    actions: isList ? actions.organizations.list : actions.organizations.normal,
+                })
+            );
+        } else if (resourceType !== 'importusers') {
             // Use wildcard for user pool resources to handle multiple tenants efficiently
             statements.push(
                 new PolicyStatement({

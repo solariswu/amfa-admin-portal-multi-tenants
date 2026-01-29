@@ -13,6 +13,7 @@ import appclients from "./appclients";
 import samls from "./samls";
 import importuser from './importusers';
 import tenants from "./tenants";
+import organizations from "./organizations";
 import brandings from "./brandings";
 import admins from "./admins";
 
@@ -76,6 +77,7 @@ export const App = () => (
       <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />
       <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
       <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />
+      <Resource options={{ label: 'Organizations' }} name="organizations" {...organizations} />
       <Resource options={{ label: 'Settings' }} name="tenants" {...tenants} />
       <Resource options={{ label: 'Brandings'}} name="brandings" {...brandings} />
       <Resource options={{ label: 'Admin'}} name="admins" {...admins} />

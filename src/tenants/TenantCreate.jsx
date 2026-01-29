@@ -1,115 +1,317 @@
-import * as React from "react";
-import { Create, Form, SaveButton, TextInput, useGetList, AutocompleteArrayInput, BooleanInput } from "react-admin";
-import { Grid, Typography, Avatar, CssBaseline } from '@mui/material';
-import RedeemIcon from '@mui/icons-material/Redeem';
+import React, { useState, useEffect } from 'react';
+import {
+  Create,
+  Form,
+  TextInput,
+  SelectInput,
+  BooleanInput,
+  SaveButton,
+  useGetList,
+  useNotify,
+  useRedirect,
+  required,
+  email,
+} from 'react-admin';
+import {
+  Grid,
+  Typography,
+  Avatar,
+  Box,
+  Card,
+  CardContent,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  CircularProgress,
+  Alert,
+} from '@mui/material';
+import BusinessIcon from '@mui/icons-material/Business';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { getRoleFromToken } from '../utils/roleUtils';
 
-import { validatePhoneNumber } from "../utils/validation";
+/**
+ * Validation: Tenant ID must be lowercase alphanumeric only, max 36 chars
+ */
+const validateTenantId = (value) => {
+  if (!value) {
+    return 'Tenant ID is required';
+  }
+  if (!/^[a-z0-9]{1,36}$/.test(value)) {
+    return 'Tenant ID must be lowercase alphanumeric (a-z, 0-9), max 36 characters';
+  }
+  return undefined;
+};
+
+/**
+ * Validation: Tenant Name max 100 chars
+ */
+const validateTenantName = (value) => {
+  if (!value) {
+    return 'Tenant Name is required';
+  }
+  if (value.length > 100) {
+    return 'Tenant Name must be max 100 characters';
+  }
+  return undefined;
+};
 
 export const TenantCreate = () => {
-    const { data } = useGetList(
-        'groups',
-        {
-            pagination: { page: 1, perPage: 60 },
-            sort: { field: 'createdAt', order: 'DESC' }
-        }
-    );
+  const notify = useNotify();
+  const redirect = useRedirect();
+  const [roleInfo, setRoleInfo] = useState({ role: null, orgId: null });
+  const [loading, setLoading] = useState(true);
 
-    const groupChoices = data ? data.map(item => ({ id: item.id, name: item.group })) : [];
+  // Get organizations for SA
+  const { data: orgs, isLoading: orgsLoading } = useGetList(
+    'organizations',
+    {
+      pagination: { page: 1, perPage: 100 },
+      sort: { field: 'name', order: 'ASC' }
+    }
+  );
 
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const info = getRoleFromToken(token);
+    setRoleInfo(info);
+    setLoading(false);
+  }, []);
+
+  // Show loading spinner while checking role
+  if (loading) {
     return (
-        <Create title="Add Tenant" redirect="show">
-            <CssBaseline />
-            <div style={{
-                margin: 8,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-            }}>
-                <Avatar>
-                    <RedeemIcon />
-                </Avatar>
-                <div style={{
-                    paddingBottom: "4em",
-                }} >
-
-                    <Typography component="h1" variant="h5">
-                        Invite User
-                    </Typography>
-                </div>
-                <Form>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} sm={5} md={5} lg={4}>
-                            <TextInput
-                                variant="outlined"
-                                required
-                                fullWidth
-                                label="Email Address"
-                                type="email"
-                                source="email"
-                                autoComplete="email"
-                            />
-                        </Grid>
-                        <Grid item xs={0} sm={6} md={6} lg={8} />
-                        <Grid item xs={12} sm={5} md={5} lg={4}>
-                            <TextInput
-                                fullWidth
-                                label="First Name"
-                                source="given_name"
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={5} md={5} lg={4}>
-                            <TextInput
-                                fullWidth
-                                label="Last Name"
-                                source="family_name"
-                                required
-                            />
-                        </Grid>
-                        <Grid item xs={0} sm={1} md={1} lg={0} />
-                        <Grid item xs={12} sm={5} md={5} lg={4}>
-                            <TextInput
-                                fullWidth
-                                source="phone_number"
-                                validate={validatePhoneNumber}
-                            />
-                        </Grid>
-                        <Grid item xs={12} sm={5} md={5} lg={4}>
-                            <TextInput
-                                fullWidth
-                                source="location"
-                                label="Location/Address"
-                            />
-                        </Grid>
-                        <Grid item xs={0} sm={1} md={1} lg={0} />
-                        <Grid item xs={12} sm={6} lg={4}>
-                            <AutocompleteArrayInput
-                                label="User Groups"
-                                source="groups"
-                                choices={groupChoices}
-                                isRequired={true}
-                                defaultValue={['user']}
-                            />
-                        </Grid>
-                        <Grid item xs={12}>
-                            <BooleanInput
-                                source="notify"
-                                label="Send an invitation email to user now"
-                                fullWidth
-                                defaultValue={true}
-                            />
-                        </Grid>
-                    </Grid>
-                    <Grid container justify="flex-end">
-                        <Grid item xs={4} >
-                            <SaveButton
-                                label="Invite"
-                            />
-                        </Grid>
-                    </Grid>
-                </Form>
-            </div>
-            <CssBaseline />
-        </Create >
+      <Box display="flex" justifyContent="center" alignItems="center" height="80vh">
+        <CircularProgress />
+      </Box>
     );
-}
+  }
+
+  // Check permission: Only SA and SPA can create tenants
+  if (!roleInfo.role || (roleInfo.role !== 'SA' && roleInfo.role !== 'SPA')) {
+    return (
+      <Box p={3}>
+        <Alert severity="error">
+          <Typography variant="h6">
+            Insufficient Permissions
+          </Typography>
+          <Typography variant="body2">
+            You don't have permission to create tenants. Only Super Admins and Service Provider Admins can create tenants.
+          </Typography>
+        </Alert>
+      </Box>
+    );
+  }
+
+  // Transform data before sending to API
+  const transform = (data) => {
+    return {
+      data: {
+        tenantId: data.tenantId.toLowerCase(), // Force lowercase
+        tenantName: data.tenantName.trim(),
+        orgId: roleInfo.role === 'SPA' ? roleInfo.orgId : data.orgId,
+        contactEmail: data.contactEmail.toLowerCase().trim(),
+        samlproxy: data.samlproxy !== false, // Default true
+        // Include admin fields only if provided (SA only)
+        ...(roleInfo.role === 'SA' && data.adminEmail && {
+          adminEmail: data.adminEmail.toLowerCase().trim(),
+          adminFirstName: data.adminFirstName?.trim(),
+          adminLastName: data.adminLastName?.trim(),
+        }),
+      }
+    };
+  };
+
+  const onSuccess = (data) => {
+    notify(`Tenant "${data.tenantName || data.tenantId}" created successfully!`, { 
+      type: 'success',
+      multiLine: true 
+    });
+    redirect('show', 'tenants', data.id || data.tenantId);
+  };
+
+  const onError = (error) => {
+    notify(`Failed to create tenant: ${error.message}`, { 
+      type: 'error',
+      multiLine: true 
+    });
+  };
+
+  return (
+    <Create
+      title="Create New Tenant"
+      redirect="show"
+      transform={transform}
+      mutationOptions={{ onSuccess, onError }}
+    >
+      <Box display="flex" flexDirection="column" alignItems="center" p={3}>
+        <Avatar sx={{ m: 1, bgcolor: 'primary.main', width: 56, height: 56 }}>
+          <BusinessIcon fontSize="large" />
+        </Avatar>
+        <Typography component="h1" variant="h4" mb={1}>
+          Create New Tenant
+        </Typography>
+        <Typography variant="body2" color="text.secondary" mb={3}>
+          {roleInfo.role === 'SA' 
+            ? 'Create a new tenant for any organization' 
+            : `Create a new tenant for your organization (${roleInfo.orgId})`
+          }
+        </Typography>
+
+        <Form>
+          <Card sx={{ maxWidth: 900, width: '100%' }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Tenant Information
+              </Typography>
+
+              <Grid container spacing={3}>
+                {/* Tenant ID */}
+                <Grid item xs={12} sm={6}>
+                  <TextInput
+                    source="tenantId"
+                    label="Tenant ID"
+                    validate={[required(), validateTenantId]}
+                    helperText="Lowercase alphanumeric only (a-z, 0-9), max 36 chars. Will be used in URL: tenantId.example.com"
+                    fullWidth
+                    inputProps={{
+                      style: { textTransform: 'lowercase' }
+                    }}
+                  />
+                </Grid>
+
+                {/* Tenant Name */}
+                <Grid item xs={12} sm={6}>
+                  <TextInput
+                    source="tenantName"
+                    label="Tenant Display Name"
+                    validate={[required(), validateTenantName]}
+                    helperText="Display name for the tenant (max 100 chars)"
+                    fullWidth
+                  />
+                </Grid>
+
+                {/* Organization - Different for SA vs SPA */}
+                <Grid item xs={12} sm={6}>
+                  {roleInfo.role === 'SA' ? (
+                    <SelectInput
+                      source="orgId"
+                      label="Organization"
+                      choices={orgs?.map(org => ({ 
+                        id: org.id, 
+                        name: org.name || org.id 
+                      })) || []}
+                      validate={required()}
+                      helperText="Select the organization for this tenant"
+                      fullWidth
+                      isLoading={orgsLoading}
+                    />
+                  ) : (
+                    <TextInput
+                      source="orgId"
+                      label="Organization"
+                      defaultValue={roleInfo.orgId}
+                      disabled
+                      helperText="Your organization (cannot be changed)"
+                      fullWidth
+                    />
+                  )}
+                </Grid>
+
+                {/* Contact Email */}
+                <Grid item xs={12} sm={6}>
+                  <TextInput
+                    source="contactEmail"
+                    label="Contact Email"
+                    type="email"
+                    validate={[required(), email()]}
+                    helperText="Primary contact email for this tenant"
+                    fullWidth
+                  />
+                </Grid>
+
+                {/* SAML Proxy */}
+                <Grid item xs={12}>
+                  <BooleanInput
+                    source="samlproxy"
+                    label="Enable SAML Proxy"
+                    defaultValue={true}
+                    helperText="Enable SAML authentication for this tenant"
+                  />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Admin Invitation Section - SA Only */}
+          {roleInfo.role === 'SA' && (
+            <Box mt={2}>
+              <Accordion>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Box>
+                    <Typography variant="h6">
+                      Assign Initial SPA Admin (Optional)
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Create and invite a Service Provider Admin for this tenant
+                    </Typography>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12}>
+                      <Alert severity="info" sx={{ mb: 2 }}>
+                        The user will be created in the tenant's UserPool and added to the SPA_{'<orgId>'} group. 
+                        They will receive an invitation email with temporary password.
+                      </Alert>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextInput
+                        source="adminEmail"
+                        label="Admin Email"
+                        type="email"
+                        validate={email()}
+                        helperText="Email for the initial admin user"
+                        fullWidth
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextInput
+                        source="adminFirstName"
+                        label="First Name"
+                        helperText="Admin's first name"
+                        fullWidth
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextInput
+                        source="adminLastName"
+                        label="Last Name"
+                        helperText="Admin's last name"
+                        fullWidth
+                      />
+                    </Grid>
+                  </Grid>
+                </AccordionDetails>
+              </Accordion>
+            </Box>
+          )}
+
+          {/* Submit Button */}
+          <Box mt={3} display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="caption" color="text.secondary">
+              * Required fields
+            </Typography>
+            <SaveButton 
+              label="Create Tenant" 
+              icon={<BusinessIcon />}
+              sx={{ minWidth: 150 }}
+            />
+          </Box>
+        </Form>
+      </Box>
+    </Create>
+  );
+};

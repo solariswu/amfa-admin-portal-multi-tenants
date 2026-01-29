@@ -1,8 +1,44 @@
-import { Toolbar, Button, List, Datagrid, TextField, useListContext } from 'react-admin';
+import { 
+	Toolbar, 
+	Button, 
+	List, 
+	Datagrid, 
+	TextField, 
+	FunctionField,
+	useListContext, 
+	CreateButton, 
+	TopToolbar,
+	useGetList,
+	Link,
+	SelectInput,
+	ReferenceInput
+} from 'react-admin';
 import { ChevronLeft, ChevronRight } from '@mui/icons-material';
 import { Box } from '@mui/material';
+import { useState, useEffect, useMemo } from 'react';
+import { canCreateTenants } from '../utils/roleUtils';
 
 const resource = 'Tenant';
+
+/**
+ * List Actions with role-based CreateButton
+ * Only SA and SPA can create tenants
+ */
+const ListActions = () => {
+	const [showCreate, setShowCreate] = useState(false);
+
+	useEffect(() => {
+		const token = localStorage.getItem('token');
+		setShowCreate(canCreateTenants(token));
+	}, []);
+
+	return (
+		<TopToolbar>
+			{showCreate && <CreateButton />}
+		</TopToolbar>
+	);
+};
+
 const Pagination = () => {
 	const { page, perPage, total, setPage } = useListContext();
 	const nbPages = Math.ceil(total / perPage) || 1;
@@ -33,19 +69,64 @@ const Pagination = () => {
 	);
 }
 
+/**
+ * Filters for tenant list
+ * Allows filtering by organization
+ */
+const TenantFilters = [
+	<ReferenceInput 
+		source="org_id" 
+		reference="organizations"
+		label="Organization"
+		alwaysOn
+	>
+		<SelectInput optionText="name" label="Organization" />
+	</ReferenceInput>
+];
+
 export const TenantList = props => {
+	// Load organizations to display names
+	const { data: organizations, isLoading: orgsLoading } = useGetList('organizations', {
+		pagination: { page: 1, perPage: 1000 }
+	});
+	
+	// Create org ID → name mapping
+	const orgMap = useMemo(() => {
+		if (!organizations) return {};
+		return organizations.reduce((map, org) => {
+			map[org.id] = org.name;
+			return map;
+		}, {});
+	}, [organizations]);
+	
 	return (
 		<Box sx={{ paddingTop: 5 }}>
 			<List  {...props}
-				title={"Configures"} perPage={10} pagination={<Pagination />}
-				actions={<></>}
-				exporter={false} >
+				title={"Tenants"} 
+				perPage={10} 
+				pagination={<Pagination />}
+				actions={<ListActions />}
+				filters={TenantFilters}
+				exporter={false}
+			>
 				<Datagrid rowClick="show" bulkActionButtons={false} optimized>
 					<TextField label="Tenant Name" source="name" sortable={true} />
 					<TextField label="Tenant Id" source="id" sortable={true} />
+					<FunctionField 
+						label="Organization" 
+						render={record => {
+							const orgName = orgMap[record.org_id] || record.org_id || 'N/A';
+							return record.org_id ? (
+								<Link to={`/organizations/${record.org_id}/show`}>
+									{orgName}
+								</Link>
+							) : orgName;
+						}}
+						sortable={false}
+					/>
 					<TextField label="Contact Email" source="contact" sortable={false} />
 					<TextField label="End User Service Provider URL" source="endUserSpUrl" sortable={false} />
-					<Button label="Edit" color="primary" icon="Edit" />
+					<Button label="Edit" color="primary" />
 				</Datagrid>
 			</List>
 		</Box>

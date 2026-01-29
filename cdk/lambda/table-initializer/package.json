@@ -1,0 +1,11 @@
+{
+  "name": "table-initializer",
+  "version": "1.0.0",
+  "description": "DynamoDB table initializer from tenants-config.json",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-secretsmanager": "^3.0.0"
+  }
+}

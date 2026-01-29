@@ -1,0 +1,30 @@
+{
+  "name": "provision-tenant",
+  "version": "2.0.0",
+  "description": "Lambda function for complete tenant provisioning in multi-tenant architecture",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "lambda",
+    "tenant",
+    "provisioning",
+    "multi-tenant",
+    "cognito",
+    "dynamodb"
+  ],
+  "author": "AMFA Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.0.0",
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/client-cloudfront": "^3.0.0",
+    "@aws-sdk/client-secretsmanager": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.x"
+  }
+}

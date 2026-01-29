@@ -1,4 +1,4 @@
-import postResData from "./post.mjs";
+import { createTenant } from "./create-tenant.mjs";
 
 //AWS configurations
 import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
@@ -24,6 +24,20 @@ const extractRequesterRoles = (authHeader) => {
     console.error('Error extracting roles from JWT:', error);
     return [];
   }
+};
+
+// Extract role info (SA or SPA with orgId)
+const extractRoleInfo = (requesterRoles) => {
+  if (requesterRoles.includes('SA')) {
+    return { role: 'SA', orgId: null };
+  }
+  
+  const spaRole = requesterRoles.find(role => role.startsWith('SPA_'));
+  if (spaRole) {
+    return { role: 'SPA', orgId: spaRole.substring(4) };
+  }
+  
+  return { role: null, orgId: null };
 };
 
 // Filter tenants based on requester role and org_id
@@ -68,23 +82,48 @@ export const handler = async (event) => {
     try {
 
         if (event.requestContext.http.method === 'POST' && (!event.queryStringParameters || !event.queryStringParameters.page)) {
-            // Create new tenant
-            const body = JSON.parse(event.body);
-            console.log('POST data: ', body);
-            const postResult = await postResData(body.data, dynamodb);
-
-            return {
-                statusCode: 200,
-                headers: {
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
-                    'Access-Control-Expose-Headers': 'Content-Range',
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Credentials': true,
-                },
-                body: JSON.stringify({ data: postResult }),
-            };
+            // Create new tenant using provision-tenant Lambda
+            try {
+                const authHeader = event.headers?.authorization || event.headers?.Authorization;
+                const requesterRoles = extractRequesterRoles(authHeader);
+                const { role, orgId } = extractRoleInfo(requesterRoles);
+                
+                const body = JSON.parse(event.body);
+                console.log('POST tenant data:', body.data);
+                console.log('Requester role:', role, 'orgId:', orgId);
+                
+                // Create tenant (invokes provision-tenant Lambda + creates admin if needed)
+                const result = await createTenant(body.data, role, orgId);
+                
+                return {
+                    statusCode: 200,
+                    headers: {
+                        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
+                        'Access-Control-Allow-Origin': '*',
+                        'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ data: result }),
+                };
+            } catch (error) {
+                console.error('Create tenant error:', error);
+                
+                const statusCode = error.message.includes('permissions') || error.message.includes('only') 
+                    ? 403 
+                    : 500;
+                
+                return {
+                    statusCode,
+                    headers: {
+                        'Access-Control-Allow-Origin': '*',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        type: 'error',
+                        message: error.message
+                    }),
+                };
+            }
         }
         else {
             // List tenants - with org-based filtering

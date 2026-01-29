@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 // import { useParams } from "react-router-dom";
 import {
   Container,
@@ -35,6 +35,7 @@ import {
 
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import awsmobile from "../aws-export";
+import { canDeleteTenants } from "../utils/roleUtils";
 
 const apiUrl = awsmobile.aws_backend_api_url;
 
@@ -249,15 +250,27 @@ export const TenantEdit = () => {
     );
   };
 
-  const EditActions = () => (
-    <TopToolbar>
-      <DeleteButton
-        confirmTitle="Are you sure you want to delete this Tenant?"
-        confirmContent=""
-      />
-      <ListButton />
-    </TopToolbar>
-  );
+  const EditActions = () => {
+    const [showDelete, setShowDelete] = useState(false);
+
+    useEffect(() => {
+      const token = localStorage.getItem('token');
+      setShowDelete(canDeleteTenants(token));
+    }, []);
+
+    return (
+      <TopToolbar>
+        {showDelete && (
+          <DeleteButton
+            confirmTitle="Delete this Tenant?"
+            confirmContent="This will disable the tenant. Resources will be preserved."
+            mutationMode="pessimistic"
+          />
+        )}
+        <ListButton />
+      </TopToolbar>
+    );
+  };
 
   const MobileTokenCard = () => (
     <Card sx={{ minWidth: "800px" }}>

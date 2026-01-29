@@ -1,0 +1,12 @@
+{
+  "name": "tenantslist",
+  "version": "1.0.0",
+  "description": "Lambda function for tenant CRUD operations with organization support",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.0.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.0.0"
+  }
+}
