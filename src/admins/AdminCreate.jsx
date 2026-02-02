@@ -1,23 +1,77 @@
 import * as React from "react";
-import { Create, Form, SaveButton, TextInput, useGetList, AutocompleteArrayInput, BooleanInput } from "react-admin";
-import { Grid, Typography, Avatar, CssBaseline } from '@mui/material';
+import { useState, useEffect } from "react";
+import { Create, Form, SaveButton, TextInput, AutocompleteArrayInput, BooleanInput, usePermissions } from "react-admin";
+import { Grid, Typography, Avatar, CssBaseline, CircularProgress } from '@mui/material';
 import RedeemIcon from '@mui/icons-material/Redeem';
 
 import { validatePhoneNumber } from "../utils/validation";
+import awsmobile from "../aws-export";
+
+const apiUrl = awsmobile.aws_backend_api_url;
 
 export const AdminCreate = () => {
-    const { data } = useGetList(
-        'admingroups',
-        {
-            pagination: { page: 1, perPage: 60 },
-            sort: { field: 'createdAt', order: 'DESC' }
-        }
-    );
+    const [groupChoices, setGroupChoices] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const { permissions } = usePermissions();
 
-    let groupChoices = data ? data : [];
-    groupChoices = groupChoices.filter(item => item !== "SA")
-    console.log ("in admin create - groupChoices", groupChoices)
-    groupChoices = groupChoices.map(item => ({ id: item.id, name: item.group }));
+    useEffect(() => {
+        const fetchAvailableGroups = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    throw new Error('No authentication token found');
+                }
+
+                console.log('Fetching available groups from backend...');
+                const response = await fetch(
+                    `${apiUrl}/admins?getAvailableGroups=true`,
+                    {
+                        headers: {
+                            'Authorization': token,
+                            'Content-Type': 'application/json',
+                        }
+                    }
+                );
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch groups: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Available groups response:', data);
+
+                // Backend returns { data: { groups: [...] } }
+                const groups = data.data?.groups || [];
+                const choices = groups.map(g => ({ id: g, name: g }));
+                
+                console.log('Available group choices:', choices);
+                setGroupChoices(choices);
+            } catch (err) {
+                console.error('Error fetching available groups:', err);
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAvailableGroups();
+    }, []);
+
+    const getHelpText = () => {
+        if (!permissions) return 'Select user groups';
+        
+        switch (permissions.roleType) {
+            case 'SA':
+                return 'As Super Admin, you can assign any SPA or TA role';
+            case 'SPA':
+                return `As ${permissions.roles[0]}, you can assign your own SPA role or any TA role`;
+            case 'TA':
+                return `As Tenant Admin, you can only assign your own TA role(s)`;
+            default:
+                return 'Select user groups';
+        }
+    };
 
     return (
         <Create title="Invite User" redirect="show">
@@ -88,12 +142,25 @@ export const AdminCreate = () => {
                         </Grid>
                         <Grid item xs={0} sm={1} md={1} lg={0} />
                         <Grid item xs={12} sm={6} lg={4}>
-                            <AutocompleteArrayInput
-                                label="User Groups"
-                                source="groups"
-                                choices={groupChoices}
-                                isRequired={true}
-                            />
+                            {loading ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <CircularProgress size={20} />
+                                    <Typography variant="body2">Loading available groups...</Typography>
+                                </div>
+                            ) : error ? (
+                                <Typography color="error" variant="body2">
+                                    Error loading groups: {error}
+                                </Typography>
+                            ) : (
+                                <AutocompleteArrayInput
+                                    label="User Groups"
+                                    source="groups"
+                                    choices={groupChoices}
+                                    isRequired={true}
+                                    disabled={loading}
+                                    helperText={getHelpText()}
+                                />
+                            )}
                         </Grid>
                         <Grid item xs={12}>
                             <BooleanInput

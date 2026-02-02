@@ -1,6 +1,7 @@
 import { UserManager } from "oidc-client";
 
 import { getProfileFromToken } from "./getProfileFromToken";
+import { getRoleType, getOrgId, getTenantId } from "../../utils/roleUtils";
 
 import awsExports from "../../aws-export";
 
@@ -108,7 +109,39 @@ const authProvider = {
       ? Promise.reject()
       : Promise.resolve();
   },
-  getPermissions: () => Promise.resolve(),
+  getPermissions: () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      return Promise.reject(new Error('No token found'));
+    }
+    
+    try {
+      const profile = getProfileFromToken(token);
+      const groups = profile['cognito:groups'] || [];
+      
+      // Extract role information
+      const roleType = getRoleType(groups);
+      const orgId = getOrgId(groups);
+      const tenantId = getTenantId(groups);
+      
+      const permissions = {
+        roles: groups,
+        roleType: roleType,
+        orgId: orgId,
+        tenantId: tenantId,
+        // Convenience flags for quick checks
+        isSA: groups.includes('SA'),
+        isSPA: groups.some(g => g.startsWith('SPA_')),
+        isTA: groups.some(g => g.startsWith('TA_'))
+      };
+      
+      console.log('Permissions loaded:', permissions);
+      return Promise.resolve(permissions);
+    } catch (error) {
+      console.error('Failed to get permissions:', error);
+      return Promise.reject(error);
+    }
+  },
   getIdentity: () => {
     const token = localStorage.getItem('token');
     if (!token || token.length === 0) {
