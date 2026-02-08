@@ -30,7 +30,7 @@ export const postResData = async (payload, dynamodb) => {
 			}
 		},
 		ReturnConsumedCapacity: 'TOTAL',
-		TableName: `amfa-${this.account}-${this.region}-tenanttable`,
+		TableName: `amfa-tenanttable`,
 	};
 
 	const item = await dynamodb.send(new PutItemCommand(params));

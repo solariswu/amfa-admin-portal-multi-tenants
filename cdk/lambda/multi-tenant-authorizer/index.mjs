@@ -148,8 +148,7 @@ export const handler = async (event) => {
         const cleanToken = token.replace(/^Bearer\s+/i, '');
 
         // Get tenant user pools configuration from environment
-        const tenantsData = JSON.parse(process.env.TENANT_USER_POOLS || '[]');
-        const region = process.env. AWS_REGION || 'us-east-1';
+        const region = process.env.AWS_REGION || 'us-east-1';
 
         console.log('Available tenants:', tenantsData.length);
 

@@ -34,7 +34,7 @@ export interface AppStackProps extends StackProps {
 }
 
 export class AppStack extends Stack {
-  public readonly spPortalWebApps: { [tenantId: string]: SPPortalWebApp } = {};
+  // public readonly spPortalWebApps: { [tenantId: string]: SPPortalWebApp } = {};
   public readonly tenantUserPoolClients: { [tenantId: string]: any } = {};
 
   constructor(scope: Construct, id: string, props: AppStackProps) {
@@ -54,15 +54,8 @@ export class AppStack extends Stack {
     //using admin userpool as main authorizor
     apigateway.attachAuthorizor(userPool);
 
-    // Create multi-tenant SP portals and user pool clients
-    this.createMultiTenantResources(userPool, props);
-
     // enable admin api endpoints - multi-tenant support via DynamoDB
     apigateway.createAdminApiEndpoints(
-      "", // Tenant data queried dynamically from DynamoDB
-      "", // Will be handled differently for multi-tenant
-      "",
-      "",
       props.hostedUIDomain ? props.hostedUIDomain : "",
       userPool.adminUserpool.userPoolId,
     );
@@ -70,12 +63,7 @@ export class AppStack extends Stack {
     apigateway.attachMetadataS3(webapp.s3bucket);
 
     // Create end user portal API endpoints with multi-tenant support
-    // We need to pass the tenant user pools data for the multi-tenant authorizer
-    // Note: We pass the raw tenant data, not parsed JSON since it contains CDK tokens
-    apigateway.createEndUserPortalApiEndpoints(
-      "", // Single user pool ID not needed for multi-tenant
-      undefined // Disable multi-tenant authorizer to avoid custom resource issues
-    );
+    apigateway.createEndUserPortalApiEndpoints();
 
     // Update post deployment lambda to handle multiple tenants
     createPostDeploymentLambda(
@@ -117,11 +105,4 @@ export class AppStack extends Stack {
     // No need for static CloudFormation outputs
   }
 
-  private createMultiTenantResources(
-    userPool: SSOUserPool,
-    props: AppStackProps,
-  ) {
-    // Multi-tenant resources are now dynamically queried from DynamoDB
-    // This method is kept for compatibility
-  }
 }

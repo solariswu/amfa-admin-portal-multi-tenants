@@ -31,7 +31,7 @@ export const getResData = async (event, dynamodb) => {
 
 	//fetch tenant Info
 	const params = {
-		TableName: `amfa-${this.account}-${this.region}-tenanttable`,
+		TableName: `amfa-tenanttable`,
 		Key: {
 			id: { S: tenantId },
 		},

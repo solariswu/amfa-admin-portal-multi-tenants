@@ -60,31 +60,31 @@ const i18nProvider = polyglotI18nProvider(locale => messages[locale], "en", {
 export const App = () => (
   <>
     <Favicon url="/favicon.ico" />
-  <BrowserRouter>
-    <Admin
-      theme={theme}
-      disableTelemetry
-      authProvider={authProvider}
-      dataProvider={dataProvider}
-      loginPage={LoginPage}
-      layout={AmfaLayout}
-      locale="en"  // Add this...
-      i18nProvider={i18nProvider}
-      requireAuth={true}
+    <BrowserRouter>
+      <Admin
+        theme={theme}
+        disableTelemetry
+        authProvider={authProvider}
+        dataProvider={dataProvider}
+        loginPage={LoginPage}
+        layout={AmfaLayout}
+        locale="en"  // Add this...
+        i18nProvider={i18nProvider}
+        requireAuth={true}
       >
-      <Resource name="users" {...users} />
-      <Resource options={{ label: 'User Import' }} name="importusers" {...importuser} />
-      <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />
-      <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
-      <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />
-      <Resource options={{ label: 'Organizations' }} name="organizations" {...organizations} />
-      <Resource options={{ label: 'Settings' }} name="tenants" {...tenants} />
-      <Resource options={{ label: 'Brandings'}} name="brandings" {...brandings} />
-      <Resource options={{ label: 'Admin'}} name="admins" {...admins} />
-      {/* <CustomRoutes>
+        <Resource name="users" {...users} />
+        <Resource options={{ label: 'User Import' }} name="importusers" {...importuser} />
+        <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />
+        <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
+        <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />
+        <Resource options={{ label: 'Organizations' }} name="organizations" {...organizations} />
+        <Resource options={{ label: 'Settings' }} name="tenants" {...tenants} />
+        <Resource options={{ label: 'Brandings' }} name="brandings" {...brandings} />
+        <Resource options={{ label: 'Admin' }} name="admins" {...admins} />
+        {/* <CustomRoutes>
         <Route path="/user/import" element={<UserImport />} />
       </CustomRoutes> */}
-    </Admin>
+      </Admin>
     </BrowserRouter>
     <div style={{
       position: 'fixed', right: 0, bottom: 0, left: 0, zIndex: 100,

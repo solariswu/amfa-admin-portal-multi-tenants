@@ -47,7 +47,7 @@ export class TableInitializer extends Construct {
 
     // Create the Lambda function for table initialization
     const initializerLambda = new Function(this, 'InitializerFunction', {
-      runtime: Runtime.NODEJS_22_X,
+      runtime: Runtime.NODEJS_LATEST,
       handler: 'index.handler',
       code: Code.fromAsset(path.join(__dirname, '../lambda/table-initializer')),
       timeout: Duration.minutes(15), // ASM registration can take time

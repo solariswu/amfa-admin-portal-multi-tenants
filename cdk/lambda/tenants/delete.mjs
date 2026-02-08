@@ -21,7 +21,7 @@ export const deleteResData = async (event, dynamodb) => {
 				S: tenantId,
 			},
 		},
-		TableName: `amfa-${this.account}-${this.region}-tenanttable`,
+		TableName: `amfa-tenanttable`,
 	};
 
 	const item = await dynamodb.send(new DeleteItemCommand(params));

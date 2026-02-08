@@ -78,7 +78,7 @@ export class TenantConfigGenerator extends Construct {
 
     // Create Lambda to generate and upload config files
     const generatorLambda = new Function(this, 'ConfigGeneratorFunction', {
-      runtime: Runtime.NODEJS_22_X,
+      runtime: Runtime.NODEJS_LATEST,
       handler: 'index.handler',
       code: Code.fromInline(`
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');

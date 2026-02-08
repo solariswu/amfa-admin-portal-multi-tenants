@@ -6,20 +6,14 @@ import {
   AccountRecovery,
   Mfa,
   UserPoolClientIdentityProvider,
-  UserPoolIdentityProviderOidc,
+  UserPoolResourceServer,
+  ResourceServerScope,
 } from "aws-cdk-lib/aws-cognito";
 
-import { Duration, Fn, CustomResource } from "aws-cdk-lib";
-import { Function, Runtime, Code } from "aws-cdk-lib/aws-lambda";
-import { Provider } from "aws-cdk-lib/custom-resources";
-import { Policy, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { Duration } from "aws-cdk-lib";
 
 import { AppStackProps } from "./application";
-import {
-  hostedUI_domain_prefix,
-  stage_config,
-  current_stage,
-} from "../config";
+import { hostedUI_domain_prefix, stage_config, current_stage, service_name, totpScopeName } from "../config";
 
 export interface TenantUserPoolInfo {
   tenantId: string;
@@ -38,6 +32,10 @@ export class SSOUserPool {
   adminUserpool: UserPool;
   adminClient: UserPoolClient;
   domainName: string;
+  // for mobileToken endpoints
+  clientCredentialsClient: UserPoolClient;
+  totpScope!: ResourceServerScope;
+  resouceServer!: UserPoolResourceServer;
 
   constructor(scope: Construct, props: AppStackProps) {
     this.scope = scope;
@@ -48,40 +46,43 @@ export class SSOUserPool {
     // Create admin userpool (single for all tenants)
     this.adminUserpool = this.createUserPool("Admin");
     this.adminClient = this.addAdminClient();
+    this.clientCredentialsClient = this.addClientCredentialClient();
   }
 
-  // Create SAML client for a specific tenant
-  public createSamlClientForTenant(
-    tenantId: string,
-    userPoolId: string,
-  ): UserPoolClient {
-    return new UserPoolClient(this.scope, `samlproxyclient-${tenantId}`, {
-      userPool: UserPool.fromUserPoolId(
-        this.scope,
-        `appuserpool-${tenantId}`,
-        userPoolId,
-      ),
-      generateSecret: true,
-      authFlows: {
-        userSrp: true,
-      },
-      oAuth: {
-        flows: {
-          authorizationCodeGrant: true,
-        },
-        scopes: [OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.EMAIL],
-        callbackUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
-        logoutUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
-      },
-      userPoolClientName: `samlproxyClient-${tenantId}`,
-      supportedIdentityProviders: [
-        UserPoolClientIdentityProvider.custom("apersona"),
-      ],
-    });
-  }
+  // // Create SAML client for a specific tenant
+  // public createSamlClientForTenant(
+  //   tenantId: string,
+  //   userPoolId: string,
+  // ): UserPoolClient {
+  //   return new UserPoolClient(this.scope, `samlproxyclient-${tenantId}`, {
+  //     userPool: UserPool.fromUserPoolId(
+  //       this.scope,
+  //       `appuserpool-${tenantId}`,
+  //       userPoolId,
+  //     ),
+  //     generateSecret: true,
+  //     authFlows: {
+  //       userSrp: true,
+  //     },
+  //     oAuth: {
+  //       flows: {
+  //         authorizationCodeGrant: true,
+  //       },
+  //       scopes: [OAuthScope.OPENID, OAuthScope.PROFILE, OAuthScope.EMAIL],
+  //       callbackUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
+  //       logoutUrls: ["http://localhost:3000/" /*, ...apps_urls*/],
+  //     },
+  //     userPoolClientName: `samlproxyClient-${tenantId}`,
+  //     supportedIdentityProviders: [
+  //       UserPoolClientIdentityProvider.custom("apersona"),
+  //     ],
+  //   });
+  // }
 
   private createUserPool = (type: string) => {
-    return new UserPool(this.scope, `SSO-${type}-userpool`, {
+    this.totpScope = new ResourceServerScope({ scopeName: totpScopeName, scopeDescription: totpScopeName });
+
+    const myuserpool = new UserPool(this.scope, `SSO-${type}-userpool`, {
       userPoolName: `aPersona-AWS-Identity-SSO-${type}-UserPool`,
       // use self sign-in is disable by default
       selfSignUpEnabled: false,
@@ -125,6 +126,13 @@ export class SSOUserPool {
           "Hello {username}, Your new aPersona Identity admin account has been created. Your temporary password is {####}",
       },
     });
+
+    this.resouceServer = myuserpool.addResourceServer(`AMFAResourceServer-${type}`, {
+      identifier: service_name,
+      scopes: [this.totpScope],
+    });
+
+    return myuserpool;
   };
 
   private addAdminClient() {
@@ -176,11 +184,31 @@ export class SSOUserPool {
     });
   }
 
+  private addClientCredentialClient() {
+    return new UserPoolClient(this.scope, "clientcredentialsClient", {
+      userPool: this.adminUserpool,
+      generateSecret: true,
+      authFlows: {
+        userSrp: true,
+      },
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: false,
+          clientCredentials: true,
+        },
+        scopes: [OAuthScope.resourceServer(this.resouceServer, this.totpScope)],
+        callbackUrls: ["https://example.com"],
+      },
+      userPoolClientName: "amfasys_clientcredentials",
+      supportedIdentityProviders: [UserPoolClientIdentityProvider.COGNITO],
+    });
+  }
+
   // // Import admin users using custom resource
   // private importAdminUsers() {
   //   // Create Lambda function for importing users
   //   const importUsersLambda = new Function(this.scope, "ImportUsersLambda", {
-  //     runtime: Runtime.NODEJS_22_X,
+  //     runtime: Runtime.NODEJS_LATEST,
   //     handler: "index.handler",
   //     timeout: Duration.minutes(5),
   //     code: Code.fromAsset("cdk/lambda/importusers"),

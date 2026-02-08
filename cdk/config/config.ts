@@ -39,3 +39,5 @@ export const samlproxy_api_url = `${api_samlproxy_base_url}samlproxy`;
 export const samlproxy_reload_url = `${api_samlproxy_base_url}reloadsamlproxy`;
 export const samlproxy_clean_url = `${api_samlproxy_base_url}clean`;
 export const samlproxy_metadata_url = `${samlproxy_base_url}Saml2IDP/proxy.xml`;
+
+export const totpScopeName = 'totptoken';

@@ -21,7 +21,7 @@ export const createPostDeploymentLambda = (
 ) => {
   const lambdaName = "postdeployment";
   const initLambda = new TriggerFunction(scope, "CDKPostDeploymentLambda", {
-    runtime: Runtime.NODEJS_22_X,
+    runtime: Runtime.NODEJS_LATEST,
     handler: "index.handler",
     code: Code.fromAsset(`cdk/lambda/${lambdaName}`),
     environment: {
