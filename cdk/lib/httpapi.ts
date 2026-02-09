@@ -275,13 +275,24 @@ export class SSOApiGateway {
 
         this.importUsersWorkerLambda = this.createImportUsersWorkerLambda();
 
+        // Create auth layer once and reuse it for all Lambda functions that need it
+        const authLayer = new LayerVersion(this.scope, 'AdminAuthLayer', {
+            code: Code.fromAsset(path.join(__dirname, '/../lambda-layers/auth-layer')),
+            compatibleRuntimes: [
+                Runtime.NODEJS_18_X,
+                Runtime.NODEJS_20_X,
+                Runtime.NODEJS_22_X
+            ],
+            description: 'Shared authorization utilities for admin portal multi-tenant support',
+        });
 
         resourceTypes.forEach(resourceType => {
             const poolId = (resourceType === 'admins' || resourceType === 'admingroups') ? adminUserPoolId : "";
             const lambdaList = this.createLambda(
                 `${resourceType}list`,
                 poolId ,
-                this.getPolicyStatements()
+                this.getPolicyStatements(),
+                authLayer
             );
             // 👇 add route for GET /resource
             this.api.addRoutes({
@@ -298,7 +309,8 @@ export class SSOApiGateway {
                 const lambda = this.createLambda(
                     `${resourceType}`,
                     poolId,
-                    this.getPolicyStatements()
+                    this.getPolicyStatements(),
+                    authLayer
                 );
                 // 👇 add route for CRUD /resource/id
                 this.api.addRoutes({
@@ -359,13 +371,6 @@ export class SSOApiGateway {
                 lambda,
             ),
             authorizer: this.authorizor,
-        });
-
-        // Create auth layer once and reuse it
-        const authLayer = new LayerVersion(this.scope, 'AdminAuthLayer', {
-            code: Code.fromAsset(path.join(__dirname, '/../lambda-layers/auth-layer')),
-            compatibleRuntimes: [Runtime.NODEJS_22_X],
-            description: 'Shared authorization utilities for admin portal multi-tenant support',
         });
 
         // amfa fetch configs api
@@ -704,7 +709,7 @@ export class SSOApiGateway {
                 SAMLPROXY_CLEAN_URL: samlproxy_clean_url,
                 SAMLPROXY_METADATA_URL: samlproxy_metadata_url,
                 ROOT_DOMAIN_NAME: this.domainName ? this.domainName : '',
-                ACCOUNT: this.account || '',
+                ACCOUNT_ID: this.account || '',
                 PROVISION_TENANT_FUNCTION_NAME: `${project_name}-provision-tenant-${this.region}`,
             },
             timeout: Duration.minutes(5)
@@ -849,7 +854,7 @@ export class SSOApiGateway {
         return statements;
     }
 
-    private createLambda(lambdaName: string, userPoolId: string, statements: PolicyStatement[]) {
+    private createLambda(lambdaName: string, userPoolId: string, statements: PolicyStatement[], authLayer?: LayerVersion) {
 
         if (lambdaName === 'importuserslist') {
 
@@ -859,6 +864,7 @@ export class SSOApiGateway {
                 code: Code.fromAsset(
                     path.join(__dirname, `/../lambda/${lambdaName}`),
                 ),
+                ...(authLayer && { layers: [authLayer] }),
                 environment: {
                     AMFA_BASE_URL: this.amfaBaseUrl,
                     AMFA_SPINFO_TABLE: 'amfa-spinfo',
@@ -881,12 +887,14 @@ export class SSOApiGateway {
             code: Code.fromAsset(
                 path.join(__dirname, `/../lambda/${lambdaName}`),
             ),
+            ...(authLayer && { layers: [authLayer] }),
             environment: {
                 USERPOOL_ID: userPoolId,
                 AMFA_BASE_URL: this.amfaBaseUrl,
                 AMFA_SPINFO_TABLE: 'amfa-spinfo',
                 IMPORTUSERS_JOB_ID_TABLE: 'amfa-importjobid',
                 IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
+                ACCOUNT_ID: this.account || "",
             },
             timeout: Duration.minutes(5),
             });
@@ -959,9 +967,9 @@ export class SSOApiGateway {
             layers: [authLayer],
             environment: {
                 AMFATENANT_TABLE,
-                SPPORTAL_BUCKET_PREFIX: `${this.account}-${service_name}`,
-                ADMINPORTAL_BUCKETNAME: `${this.account}-${this.region}-adminportal-${service_name}-web`,
-                ADMINPORTAL_DISTRIBUTION_ID: process.env.ADMINPORTAL_DISTRIBUTION_ID ? process.env.ADMINPORTAL_DISTRIBUTION_ID : '',
+                SPPORTAL_BUCKET_PREFIX: `${this.account || ''}-${service_name}`,
+                ADMINPORTAL_BUCKETNAME: `${this.account || ''}-${this.region || ''}-adminportal-${service_name}-web`,
+                ADMINPORTAL_DISTRIBUTION_ID: process.env.ADMINPORTAL_DISTRIBUTION_ID || '',
             },
             timeout: Duration.minutes(5)
         });
@@ -973,7 +981,8 @@ export class SSOApiGateway {
                         resources: ['*'],
                         actions: [
                             "s3:GetObject",
-                            "s3:PutObject"
+                            "s3:PutObject",
+                            "s3:ListBucket"
                         ],
                     }),
                 ],

@@ -35,6 +35,7 @@ const dataProvider = {
             return Promise.resolve({ data: [], pageInfo: { hasNextPage: false, hasPreviousPage: false } });
             // return Promise.reject(new Error('No token'));
         }
+        
         return fetch(url, {
             method: 'POST',
             body: pageToken,

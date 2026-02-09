@@ -73,7 +73,7 @@ export async function getSharedASMCredentials() {
 async function registerSharedASM() {
   const asmPortalUrl = process.env.ASM_PORTAL_URL;
   const asmSecretKey = process.env.ASM_SECRET_KEY;
-  const awsAccount = process.env.AWS_ACCOUNT;
+  const awsAccount = process.env.ACCOUNT_ID;
   const awsRegion = process.env.AWS_REGION;
   const rootDomain = process.env.ROOT_DOMAIN;
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com';

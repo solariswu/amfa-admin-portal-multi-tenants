@@ -90,7 +90,7 @@ export const AdminCreate = () => {
                 }} >
 
                     <Typography component="h1" variant="h5">
-                        Invite User
+                        Invite Admin
                     </Typography>
                 </div>
                 <Form>
