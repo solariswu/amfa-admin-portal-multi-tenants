@@ -4,17 +4,28 @@ import { createTenant } from "./create-tenant.mjs";
 import { DynamoDBClient, ScanCommand } from "@aws-sdk/client-dynamodb";
 const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
 
-// Extract requester roles from JWT
-const extractRequesterRoles = (authHeader) => {
-  if (!authHeader) return [];
+// Decode JWT payload
+const decodeJwtPayload = (authHeader) => {
+  if (!authHeader) return null;
 
   try {
     const jwt = authHeader.replace("Bearer ", "");
     const jwtBase64Url = jwt.split(".")[1];
     const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
     const jwtBuffer = Buffer.from(jwtBase64, "base64");
-    const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
+    return JSON.parse(jwtBuffer.toString("ascii"));
+  } catch (error) {
+    console.error("Error decoding JWT:", error);
+    return null;
+  }
+};
 
+// Extract requester roles from JWT
+const extractRequesterRoles = (authHeader) => {
+  const jwtPayload = decodeJwtPayload(authHeader);
+  if (!jwtPayload) return [];
+
+  try {
     let groups = jwtPayload["cognito:groups"];
     if (!groups) return [];
     if (typeof groups === "string") groups = groups.match(/[^\[\]\s]+/g);
@@ -24,6 +35,14 @@ const extractRequesterRoles = (authHeader) => {
     console.error("Error extracting roles from JWT:", error);
     return [];
   }
+};
+
+// Extract requester email from JWT
+const extractRequesterEmail = (authHeader) => {
+  const jwtPayload = decodeJwtPayload(authHeader);
+  if (!jwtPayload) return null;
+
+  return jwtPayload.email || null;
 };
 
 // Extract role info (SA or SPA with orgId)
@@ -90,12 +109,14 @@ export const handler = async (event) => {
         const requesterRoles = extractRequesterRoles(authHeader);
         const { role, orgId } = extractRoleInfo(requesterRoles);
 
+        const requesterEmail = extractRequesterEmail(authHeader);
+
         const body = JSON.parse(event.body);
         console.log("POST tenant data:", body.data);
-        console.log("Requester role:", role, "orgId:", orgId);
+        console.log("Requester role:", role, "orgId:", orgId, "requesterEmail:", requesterEmail);
 
         // Create tenant (invokes provision-tenant Lambda + creates admin if needed)
-        const result = await createTenant(body.data.data, role, orgId);
+        const result = await createTenant(body.data.data, role, orgId, requesterEmail);
 
         return {
           statusCode: 200,

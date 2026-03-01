@@ -19,14 +19,10 @@ import {
   Box,
   Card,
   CardContent,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   CircularProgress,
   Alert,
 } from '@mui/material';
 import BusinessIcon from '@mui/icons-material/Business';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { getRoleFromToken } from '../utils/roleUtils';
 
 /**
@@ -109,14 +105,11 @@ export const TenantCreate = () => {
         tenantId: data.tenantId.toLowerCase(), // Force lowercase
         tenantName: data.tenantName.trim(),
         orgId: roleInfo.role === 'SPA' ? roleInfo.orgId : data.orgId,
-        contactEmail: data.contactEmail.toLowerCase().trim(),
         samlproxy: data.samlproxy !== false, // Default true
-        // Include admin fields only if provided (SA only)
-        ...(roleInfo.role === 'SA' && data.adminEmail && {
-          adminEmail: data.adminEmail.toLowerCase().trim(),
-          adminFirstName: data.adminFirstName?.trim(),
-          adminLastName: data.adminLastName?.trim(),
-        }),
+        // Admin invitation is mandatory
+        adminEmail: data.adminEmail.toLowerCase().trim(),
+        adminFirstName: data.adminFirstName?.trim(),
+        adminLastName: data.adminLastName?.trim(),
       }
     };
   };
@@ -270,18 +263,6 @@ export const TenantCreate = () => {
                   )}
                 </Grid>
 
-                {/* Contact Email */}
-                <Grid item xs={12} sm={6}>
-                  <TextInput
-                    source="contactEmail"
-                    label="Contact Email"
-                    type="email"
-                    validate={[required(), email()]}
-                    helperText="Primary contact email for this tenant"
-                    fullWidth
-                  />
-                </Grid>
-
                 {/* SAML Proxy */}
                 <Grid item xs={12}>
                   <BooleanInput
@@ -295,62 +276,51 @@ export const TenantCreate = () => {
             </CardContent>
           </Card>
 
-          {/* Admin Invitation Section - SA Only */}
-          {roleInfo.role === 'SA' && (
-            <Box mt={2}>
-              <Accordion>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Box>
-                    <Typography variant="h6">
-                      Assign Initial Tenant Admin (Optional)
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Create and invite a Tenant Admin for this tenant
-                    </Typography>
-                  </Box>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12}>
-                      <Alert severity="info" sx={{ mb: 2 }}>
-                        The user will be created in the admin UserPool and added to the TA_{'<tenantId>'} group. 
-                        They will receive an invitation email with temporary password.
-                      </Alert>
-                    </Grid>
+          {/* Initial Tenant Admin Invitation (Mandatory) */}
+          <Card sx={{ maxWidth: 900, width: '100%', mt: 2 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Initial Tenant Admin
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    The user will be created in the admin UserPool and added to the TA_{'<tenantId>'} group. 
+                    They will receive an invitation email with temporary password.
+                  </Alert>
+                </Grid>
 
-                    <Grid item xs={12} sm={6}>
-                      <TextInput
-                        source="adminEmail"
-                        label="Admin Email"
-                        type="email"
-                        validate={email()}
-                        helperText="Email for the initial admin user"
-                        fullWidth
-                      />
-                    </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextInput
+                    source="adminEmail"
+                    label="Admin Email"
+                    type="email"
+                    validate={[required(), email()]}
+                    helperText="Email for the initial tenant admin user (required)"
+                    fullWidth
+                  />
+                </Grid>
 
-                    <Grid item xs={12} sm={6}>
-                      <TextInput
-                        source="adminFirstName"
-                        label="First Name"
-                        helperText="Admin's first name"
-                        fullWidth
-                      />
-                    </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextInput
+                    source="adminFirstName"
+                    label="First Name"
+                    helperText="Admin's first name"
+                    fullWidth
+                  />
+                </Grid>
 
-                    <Grid item xs={12} sm={6}>
-                      <TextInput
-                        source="adminLastName"
-                        label="Last Name"
-                        helperText="Admin's last name"
-                        fullWidth
-                      />
-                    </Grid>
-                  </Grid>
-                </AccordionDetails>
-              </Accordion>
-            </Box>
-          )}
+                <Grid item xs={12} sm={6}>
+                  <TextInput
+                    source="adminLastName"
+                    label="Last Name"
+                    helperText="Admin's last name"
+                    fullWidth
+                  />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
 
           {/* Submit Button */}
           <Box mt={3} display="flex" justifyContent="space-between" alignItems="center">

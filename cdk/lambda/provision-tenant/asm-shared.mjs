@@ -173,12 +173,12 @@ export async function getOrCreateServiceProvider(orgId, contactEmail) {
  * Uses the org's asmSecretKey and serviceProviderId.
  * Returns full ASM response including apiKeys (used for amfaPolicies).
  *
- * @param {Object} tenantData - Tenant data (tenantId, contactEmail, etc.)
+ * @param {Object} tenantData - Tenant data (tenantId, contactEmail, adminEmail, etc.)
  * @param {Object} orgCredentials - Org credentials from getOrCreateServiceProvider()
  * @returns {Promise<Object>} Full ASM registration response including apiKeys
  */
 export async function registerTenantWithASM(tenantData, orgCredentials) {
-  const { tenantId, contactEmail } = tenantData;
+  const { tenantId, contactEmail, adminEmail } = tenantData;
   const { serviceProviderId, asmSecretKey } = orgCredentials;
 
   const asmPortalUrl = process.env.ASM_PORTAL_URL;
@@ -192,15 +192,20 @@ export async function registerTenantWithASM(tenantData, orgCredentials) {
 
   const awsUserPoolFqdn = `${tenantId}.apersonaid.${rootDomain}`;
 
+  // adminEmail = initial tenant admin (newTenantAdminEmail)
+  // contactEmail = requester/installer email (asmTenantInstallerEmail)
+  const tenantAdminEmail = adminEmail || contactEmail;
+  const installerEmail = contactEmail;
+
   const formData = new URLSearchParams({
     newTenantName: tenantId,
-    newTenantAdminEmail: contactEmail,
+    newTenantAdminEmail: tenantAdminEmail,
     awsAccountId: awsAccount,
     asmSecretKey: asmSecretKey,
     serviceProviderId: serviceProviderId,
     awsUserPoolFqdn: awsUserPoolFqdn,
     awsRegion: awsRegion,
-    asmTenantInstallerEmail: contactEmail,
+    asmTenantInstallerEmail: installerEmail,
   });
 
   console.log(`[ASM] Registering tenant with ASM:`);
@@ -210,6 +215,8 @@ export async function registerTenantWithASM(tenantData, orgCredentials) {
   console.log(`[ASM]   Tenant ID: ${tenantId}`);
   console.log(`[ASM]   Service Provider ID: ${serviceProviderId}`);
   console.log(`[ASM]   UserPool FQDN: ${awsUserPoolFqdn}`);
+  console.log(`[ASM]   Tenant Admin Email: ${tenantAdminEmail}`);
+  console.log(`[ASM]   Installer Email: ${installerEmail}`);
 
   const response = await fetch(
     `${asmPortalUrl}/newTenantAssignmentWithDefaults.ap`,

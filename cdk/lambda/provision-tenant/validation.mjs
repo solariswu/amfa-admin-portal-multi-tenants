@@ -45,9 +45,11 @@ export function validateTenantData(event) {
     errors.push('orgId must be alphanumeric and max 36 characters');
   }
   
-  // Optional fields with validation
-  if (data.adminEmail && !EMAIL_REGEX.test(data.adminEmail)) {
-    errors.push('adminEmail must be a valid email address if provided');
+  // adminEmail is now required (initial tenant admin)
+  if (!data.adminEmail) {
+    errors.push('adminEmail is required (initial tenant admin)');
+  } else if (!EMAIL_REGEX.test(data.adminEmail)) {
+    errors.push('adminEmail must be a valid email address');
   }
   
   if (errors.length > 0) {

@@ -20,10 +20,11 @@ const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
  * @param {Object} data - Tenant data from frontend
  * @param {string} requesterRole - 'SA' or 'SPA'
  * @param {string} requesterOrgId - Organization ID for SPA users
+ * @param {string} requesterEmail - Email of the requester (from JWT)
  * @returns {Object} Created tenant data
  */
-export async function createTenant(data, requesterRole, requesterOrgId) {
-  console.log("Creating tenant:", { data, requesterRole, requesterOrgId });
+export async function createTenant(data, requesterRole, requesterOrgId, requesterEmail) {
+  console.log("Creating tenant:", { data, requesterRole, requesterOrgId, requesterEmail });
 
   // 1. Validate authorization
   if (!requesterRole || (requesterRole !== "SA" && requesterRole !== "SPA")) {
@@ -56,12 +57,19 @@ export async function createTenant(data, requesterRole, requesterOrgId) {
   // 4. Invoke provision-tenant Lambda
   console.log("Invoking provision-tenant Lambda...");
 
+  // Use requester email from JWT as contact/installer email
+  const contactEmail = requesterEmail || data.contactEmail;
+  if (!contactEmail) {
+    throw new Error("Requester email could not be determined from JWT token");
+  }
+
   const provisionPayload = {
     body: {
       tenantId: data.tenantId,
       tenantName: data.tenantName,
       orgId: data.orgId,
-      contactEmail: data.contactEmail,
+      contactEmail: contactEmail,
+      adminEmail: data.adminEmail, // Mandatory tenant initial admin email
       samlproxy: data.samlproxy !== false, // Default true
     },
   };
@@ -137,9 +145,8 @@ export async function createTenant(data, requesterRole, requesterOrgId) {
     );
   }
 
-  // 6. Create admin user if provided (SA only)
+  // 6. Create admin user (mandatory for both SA and SPA)
   if (
-    requesterRole === "SA" &&
     data.adminEmail &&
     provisionedTenant.userPoolId
   ) {

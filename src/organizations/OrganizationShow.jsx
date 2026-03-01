@@ -111,7 +111,7 @@ const TenantListCard = () => {
           <Typography variant="h5" gutterBottom>
             Tenants in this Organization
           </Typography>
-          {permissions?.isSA && record?.id && (
+          {(permissions?.isSA || (permissions?.isSPA && permissions?.orgId === record?.id)) && record?.id && (
             <Button
               variant="contained"
               size="small"
