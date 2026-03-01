@@ -93,7 +93,7 @@ export async function registerOrReuseTenant(tenantData) {
     awsAccountId: process.env.ACCOUNT_ID,
     newTenantAdminEmail: process.env.ADMIN_EMAIL,
     asmSecretKey: asmSecretKey,
-    awsUserPoolFqdn: process.env.ROOT_DOMAIN,
+    awsUserPoolFqdn: process.env.ROOT_DOMAIN_NAME,
     awsRegion: process.env.AWS_REGION,
     asmTenantInstallerEmail:
       process.env.INSTALLER_EMAIL || process.env.ADMIN_EMAIL,

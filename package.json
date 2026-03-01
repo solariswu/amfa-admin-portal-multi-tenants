@@ -6,6 +6,7 @@
     "@mui/icons-material": "^5.11.16",
     "@mui/material": "^5.12.0",
     "@tanstack/react-query": "^5.90.20",
+    "caniuse-lite": "^1.0.30001770",
     "constructs": "^10.2.7",
     "oidc-client": "^1.11.5",
     "papaparse": "^5.4.1",
@@ -27,12 +28,6 @@
     "cdk-build": "tsc --target ES2018 --moduleResolution node --module commonjs cdk/bin/sso-cup.ts",
     "lambda-build": "./scripts/build-lambdas.sh",
     "deploy": "npm run lambda-build && npm run cdk-build && cdk deploy --all --profile $npm_config_profile"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
   },
   "browserslist": {
     "production": [

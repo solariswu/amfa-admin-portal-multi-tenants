@@ -1,7 +1,7 @@
 import {
-	GetItemCommand,
+	QueryCommand,
 } from '@aws-sdk/client-dynamodb';
-import { validateTenantAccess } from '/opt/nodejs/admin-auth/index.mjs';
+import { validateTenantAccess } from 'admin-auth';
 
 const postURL = `https://api.${process.env.AMFA_BASE_URL}/amfa`;
 
@@ -10,7 +10,7 @@ const fetchAmfaSecrets = async (id) => fetch(postURL, {
 	headers: {
 		'Content-Type': 'application/json',
 		'Accept': 'application/json',
-		'Origin': `https://${process.env.AMFA_BASE_URL}`,
+		'Origin': `https://${id}.${process.env.AMFA_BASE_URL}`,
 	},
 	body: JSON.stringify({
 		phase: 'admingetsecretinfo', tenantid: id
@@ -29,19 +29,21 @@ export const getResData = async (event, dynamodb) => {
 		throw error;
 	}
 
-	//fetch tenant Info
+	//fetch tenant Info - use Query with composite key
 	const params = {
 		TableName: `amfa-tenanttable`,
-		Key: {
-			id: { S: tenantId },
-		},
+		KeyConditionExpression: 'id = :id AND begins_with(sk, :sk_prefix)',
+		ExpressionAttributeValues: {
+			':id': { S: `TENANT#${tenantId}` },
+			':sk_prefix': { S: 'TENANT#' }
+		}
 	};
 
-	const result = await dynamodb.send(new GetItemCommand(params));
+	const result = await dynamodb.send(new QueryCommand(params));
 
 	console.log('get tenants result', result);
 
-	const item = result.Item;
+	const item = result.Items && result.Items.length > 0 ? result.Items[0] : null;
 
 
 	const res = await fetchAmfaSecrets(tenantId);

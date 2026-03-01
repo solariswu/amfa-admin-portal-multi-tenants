@@ -12,7 +12,12 @@
  * 5. Keep ASM registration (can be reused)
  */
 
-import { CognitoIdentityProviderClient, DeleteUserPoolCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { 
+  CognitoIdentityProviderClient, 
+  DeleteUserPoolCommand,
+  DeleteUserPoolDomainCommand,
+  DescribeUserPoolCommand
+} from '@aws-sdk/client-cognito-identity-provider';
 import { deleteTenantFromDynamoDB } from './dynamodb-operations.mjs';
 import { deleteConfigFiles } from './config-generator.mjs';
 
@@ -149,9 +154,11 @@ async function rollbackTables(data) {
 
 /**
  * Rollback Cognito resources
+ * Must delete domain BEFORE deleting UserPool
  */
 async function rollbackCognito(data) {
   const userPoolId = data?.userPoolId;
+  const oauthDomain = data?.oauthDomain;
   
   if (!userPoolId) {
     console.warn('[ROLLBACK] No UserPool ID provided for Cognito rollback');
@@ -161,12 +168,37 @@ async function rollbackCognito(data) {
   console.log(`[ROLLBACK] Deleting Cognito UserPool: ${userPoolId}`);
   
   try {
-    // Deleting UserPool cascades to delete all clients and domains
-    const command = new DeleteUserPoolCommand({
+    // STEP 1: Delete the domain first (if it exists)
+    if (oauthDomain) {
+      console.log(`[ROLLBACK] Deleting Cognito domain: ${oauthDomain}`);
+      
+      try {
+        const deleteDomainCommand = new DeleteUserPoolDomainCommand({
+          Domain: oauthDomain,
+          UserPoolId: userPoolId
+        });
+        
+        await cognito.send(deleteDomainCommand);
+        console.log(`[ROLLBACK] Successfully deleted domain ${oauthDomain}`);
+        
+        // Wait a moment for domain deletion to propagate
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+      } catch (domainError) {
+        if (domainError.name === 'ResourceNotFoundException') {
+          console.log(`[ROLLBACK] Domain ${oauthDomain} already deleted or doesn't exist`);
+        } else {
+          console.warn(`[ROLLBACK] Failed to delete domain, but continuing:`, domainError.message);
+        }
+      }
+    }
+    
+    // STEP 2: Delete the UserPool (this cascades to delete clients)
+    const deletePoolCommand = new DeleteUserPoolCommand({
       UserPoolId: userPoolId
     });
     
-    await cognito.send(command);
+    await cognito.send(deletePoolCommand);
     console.log(`[ROLLBACK] Successfully deleted UserPool ${userPoolId}`);
     
   } catch (error) {
@@ -174,7 +206,41 @@ async function rollbackCognito(data) {
       console.log(`[ROLLBACK] UserPool ${userPoolId} already deleted or doesn't exist`);
       return;
     }
-    throw error;
+    
+    // If still failing due to domain, try to get and delete it
+    if (error.message && error.message.includes('domain')) {
+      console.log(`[ROLLBACK] Retrying after domain issue...`);
+      
+      try {
+        // Describe UserPool to get domain info
+        const describeCommand = new DescribeUserPoolCommand({
+          UserPoolId: userPoolId
+        });
+        
+        const poolInfo = await cognito.send(describeCommand);
+        const domain = poolInfo.UserPool?.Domain;
+        
+        if (domain) {
+          console.log(`[ROLLBACK] Found domain ${domain}, deleting it`);
+          const deleteDomainCommand = new DeleteUserPoolDomainCommand({
+            Domain: domain,
+            UserPoolId: userPoolId
+          });
+          
+          await cognito.send(deleteDomainCommand);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Retry UserPool deletion
+          await cognito.send(new DeleteUserPoolCommand({ UserPoolId: userPoolId }));
+          console.log(`[ROLLBACK] Successfully deleted UserPool ${userPoolId} after domain cleanup`);
+        }
+      } catch (retryError) {
+        console.error(`[ROLLBACK] Retry failed:`, retryError.message);
+        throw error; // Throw original error
+      }
+    } else {
+      throw error;
+    }
   }
 }
 

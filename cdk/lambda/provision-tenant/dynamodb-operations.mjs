@@ -23,14 +23,16 @@ const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
  * @param {Object} tenantData - Validated tenant data
  * @param {Object} cognitoResources - Cognito resource IDs
  * @param {Object} asmData - ASM registration data
- * @param {Object} tenantTables - Per-tenant table names
+ * @param {Object} tenantTables - Per-tenant table names (can be null if tables not created yet)
+ * @param {string} status - Tenant status (default: 'provisioning')
  * @returns {Promise<void>}
  */
 export async function saveTenantToDynamoDB(
   tenantData,
   cognitoResources,
   asmData,
-  tenantTables,
+  tenantTables = null,
+  status = "provisioning",
 ) {
   const { tenantId, tenantName, contactEmail, orgId, samlproxy } = tenantData;
   const tableName = process.env.AMFATENANT_TABLE;
@@ -47,16 +49,24 @@ export async function saveTenantToDynamoDB(
     throw new Error(`Tenant ${tenantId} already exists in database`);
   }
 
-  const rootDomain = process.env.ROOT_DOMAIN;
-  const now = Date.now();
+  const rootDomain = process.env.ROOT_DOMAIN_NAME;
+  const now = new Date().toISOString();
+  const timestamp = Date.now();
 
   const item = {
-    id: { S: tenantId },
+    // Composite key
+    id: { S: `TENANT#${tenantId}` },
+    sk: { S: `TENANT#${now}` },
+
+    // Entity type
+    type: { S: "tenant" },
+
+    // Tenant data
     name: { S: encodeURIComponent(tenantName) },
     contact: { S: contactEmail },
     org_id: { S: orgId },
     url: { S: `https://${tenantId}.${rootDomain}` },
-    endUserSpUrl: { S: `https://${tenantId}.${rootDomain}` },
+    endUserSpUrl: { S: `https://${tenantId}.login.${rootDomain}` },
     samlproxy: { BOOL: samlproxy },
     userpool: { S: cognitoResources.userPoolId },
     userPoolArn: { S: cognitoResources.userPoolArn },
@@ -66,19 +76,22 @@ export async function saveTenantToDynamoDB(
     // ASM data
     asmClientId: { S: asmData.asmClientId },
     mobileTokenKey: { S: asmData.mobileTokenKey },
-    // Per-tenant table names
-    authCodeTable: { S: tenantTables.authCodeTable },
-    sessionIdTable: { S: tenantTables.sessionIdTable },
-    totpTokenTable: { S: tenantTables.totpTokenTable },
-    pwdHashTable: { S: tenantTables.pwdHashTable },
-    configTable: { S: tenantTables.configTable },
-    // Timestamps
-    createdAt: { N: now.toString() },
-    updatedAt: { N: now.toString() },
+    // Audit timestamps
+    created_at: { S: now },
+    updated_at: { S: now },
+    createdAt: { N: timestamp.toString() },
+    updatedAt: { N: timestamp.toString() },
     // Provisioning metadata
     provisionedBy: { S: "provision-tenant-lambda" },
-    provisionedAt: { S: new Date(now).toISOString() },
+    provisionedAt: { S: now },
+    // Status
+    status: { S: status },
+    // Version for optimistic locking
+    version: { N: "1" },
   };
+
+  // Table names are no longer stored in DynamoDB.
+  // They follow a fixed convention: amfa-{type}-{tenantId} and are derived at runtime.
 
   // Add optional fields if present
   if (tenantData.adminEmail) {
@@ -122,17 +135,21 @@ export async function checkTenantExists(tenantId) {
 
   console.log(`[DynamoDB] Checking if tenant ${tenantId} exists`);
 
-  const command = new GetItemCommand({
+  // Use Query with composite key (id + sk)
+  const command = new QueryCommand({
     TableName: tableName,
-    Key: {
-      id: { S: tenantId },
+    KeyConditionExpression: "id = :id AND begins_with(sk, :sk_prefix)",
+    ExpressionAttributeValues: {
+      ":id": { S: `TENANT#${tenantId}` },
+      ":sk_prefix": { S: "TENANT#" },
     },
     ProjectionExpression: "id",
+    Limit: 1,
   });
 
   try {
     const response = await dynamodb.send(command);
-    const exists = !!response.Item;
+    const exists = response.Items && response.Items.length > 0;
     console.log(`[DynamoDB] Tenant ${tenantId} exists: ${exists}`);
     return exists;
   } catch (error) {
@@ -156,28 +173,39 @@ export async function getTenantFromDynamoDB(tenantId) {
 
   console.log(`[DynamoDB] Getting tenant ${tenantId} from table`);
 
-  const command = new GetItemCommand({
+  // Use Query with composite key
+  const command = new QueryCommand({
     TableName: tableName,
-    Key: {
-      id: { S: tenantId },
+    KeyConditionExpression: "id = :id AND begins_with(sk, :sk_prefix)",
+    ExpressionAttributeValues: {
+      ":id": { S: `TENANT#${tenantId}` },
+      ":sk_prefix": { S: "TENANT#" },
     },
   });
 
   try {
     const response = await dynamodb.send(command);
-    if (!response.Item) {
+    if (!response.Items || response.Items.length === 0) {
+      console.log(`[DynamoDB] Tenant ${tenantId} not found`);
       return null;
     }
 
+    const item = response.Items[0];
+
     // Convert DynamoDB format to plain object
     return {
-      id: response.Item.id?.S,
-      name: decodeURIComponent(response.Item.name?.S || ""),
-      contact: response.Item.contact?.S,
-      orgId: response.Item.org_id?.S,
-      url: response.Item.url?.S,
-      userPoolId: response.Item.userpool?.S,
-      // ... add other fields as needed
+      id: tenantId,
+      sk: item.sk?.S || "",
+      name: decodeURIComponent(item.name?.S || ""),
+      contact: item.contact?.S,
+      orgId: item.org_id?.S,
+      url: item.url?.S,
+      userPoolId: item.userpool?.S,
+      userPoolArn: item.userPoolArn?.S,
+      spPortalClientId: item.spPortalClientId?.S,
+      samlClientId: item.samlClientId?.S,
+      oauthDomain: item.oauthDomain?.S,
+      status: item.status?.S || "active",
     };
   } catch (error) {
     console.error(`[DynamoDB] Error getting tenant:`, error);
@@ -203,14 +231,24 @@ export async function deleteTenantFromDynamoDB(tenantId) {
 
   console.log(`[DynamoDB] Deleting tenant ${tenantId} from table ${tableName}`);
 
-  const command = new DeleteItemCommand({
-    TableName: tableName,
-    Key: {
-      id: { S: tenantId },
-    },
-  });
-
   try {
+    // First, get the tenant to retrieve its sk
+    const tenant = await getTenantFromDynamoDB(tenantId);
+
+    if (!tenant) {
+      console.log(`[DynamoDB] Tenant ${tenantId} not found, nothing to delete`);
+      return;
+    }
+
+    // Delete using composite key
+    const command = new DeleteItemCommand({
+      TableName: tableName,
+      Key: {
+        id: { S: `TENANT#${tenantId}` },
+        sk: { S: tenant.sk },
+      },
+    });
+
     await dynamodb.send(command);
     console.log(`[DynamoDB] Successfully deleted tenant ${tenantId}`);
   } catch (error) {
@@ -255,6 +293,98 @@ export async function getTenantsByOrgId(orgId) {
       error.message,
     );
     return [];
+  }
+}
+
+/**
+ * Update tenant status and additional attributes
+ *
+ * @param {string} tenantId - Tenant ID to update
+ * @param {string} status - New status value
+ * @param {Object} additionalAttributes - Additional attributes to update
+ * @returns {Promise<void>}
+ */
+export async function updateTenantStatus(
+  tenantId,
+  status,
+  additionalAttributes = {},
+) {
+  const tableName = process.env.AMFATENANT_TABLE;
+
+  if (!tableName) {
+    throw new Error("AMFATENANT_TABLE environment variable is not set");
+  }
+
+  console.log(`[DynamoDB] Updating tenant ${tenantId} status to: ${status}`);
+
+  // First, get the tenant to retrieve its sk
+  const tenant = await getTenantFromDynamoDB(tenantId);
+
+  if (!tenant) {
+    throw new Error(`Tenant ${tenantId} not found`);
+  }
+
+  const now = new Date().toISOString();
+  const timestamp = Date.now();
+
+  // Build update expression dynamically
+  const updateExpressions = [
+    "#status = :status",
+    "#updated_at = :updated_at",
+    "#updatedAt = :updatedAt",
+  ];
+  const expressionAttributeNames = {
+    "#status": "status",
+    "#updated_at": "updated_at",
+    "#updatedAt": "updatedAt",
+  };
+  const expressionAttributeValues = {
+    ":status": { S: status },
+    ":updated_at": { S: now },
+    ":updatedAt": { N: timestamp.toString() },
+  };
+
+  // Add additional attributes to update
+  Object.entries(additionalAttributes).forEach(([key, value]) => {
+    const attrName = `#${key.replace(/\./g, "_")}`;
+    const attrValue = `:${key.replace(/\./g, "_")}`;
+
+    updateExpressions.push(`${attrName} = ${attrValue}`);
+    expressionAttributeNames[attrName] = key;
+
+    // Convert value to DynamoDB format
+    if (typeof value === "string") {
+      expressionAttributeValues[attrValue] = { S: value };
+    } else if (typeof value === "number") {
+      expressionAttributeValues[attrValue] = { N: value.toString() };
+    } else if (typeof value === "boolean") {
+      expressionAttributeValues[attrValue] = { BOOL: value };
+    } else if (typeof value === "object" && value !== null) {
+      // For complex objects, store as JSON string
+      expressionAttributeValues[attrValue] = { S: JSON.stringify(value) };
+    }
+  });
+
+  const { UpdateItemCommand } = await import("@aws-sdk/client-dynamodb");
+
+  const command = new UpdateItemCommand({
+    TableName: tableName,
+    Key: {
+      id: { S: `TENANT#${tenantId}` },
+      sk: { S: tenant.sk },
+    },
+    UpdateExpression: `SET ${updateExpressions.join(", ")}`,
+    ExpressionAttributeNames: expressionAttributeNames,
+    ExpressionAttributeValues: expressionAttributeValues,
+    ReturnValues: "ALL_NEW",
+  });
+
+  try {
+    await dynamodb.send(command);
+    console.log(`[DynamoDB] Successfully updated tenant ${tenantId}`);
+  } catch (error) {
+    console.error(`[DynamoDB] Failed to update tenant ${tenantId}:`, error);
+    throw new Error(`Failed to update tenant status: ${error.message}`);
   }
 }
 

@@ -144,145 +144,147 @@ const addSAMLProxyCallBacks = async () => {
   }
 };
 
-const addSUIdPToAdminPool = async (UserPoolId, ClientId, IdPName) => {
-  try {
-    const res = await cognito.send(
-      new DescribeUserPoolClientCommand({
-        UserPoolId,
-        ClientId,
-      }),
-    );
+// const addSUIdPToAdminPool = async (UserPoolId, ClientId, IdPName) => {
+//   try {
+//     const res = await cognito.send(
+//       new DescribeUserPoolClientCommand({
+//         UserPoolId,
+//         ClientId,
+//       }),
+//     );
 
-    let params = res.UserPoolClient;
-    delete params.CreationDate;
-    delete params.LastModifiedDate;
-    delete params.ClientSecret;
-    params.SupportedIdentityProviders.push(IdPName);
+//     let params = res.UserPoolClient;
+//     delete params.CreationDate;
+//     delete params.LastModifiedDate;
+//     delete params.ClientSecret;
+//     params.SupportedIdentityProviders.push(IdPName);
 
-    const response = await cognito.send(
-      new UpdateUserPoolClientCommand(params),
-    );
+//     const response = await cognito.send(
+//       new UpdateUserPoolClientCommand(params),
+//     );
 
-    console.log("add SU Admin IdP to AdminPool result:", response);
-  } catch (error) {
-    console.error("addSUIdPToAdminPool failed with:", error);
-    console.error("RequestId: " + error.requestId);
-  }
-};
+//     console.log("add SU Admin IdP to AdminPool result:", response);
+//   } catch (error) {
+//     console.error("addSUIdPToAdminPool failed with:", error);
+//     console.error("RequestId: " + error.requestId);
+//   }
+// };
 
-const createSUIDP = async (domainName, UserPoolId) => {
-  if (domainName) {
-    console.log("registering domainName to super admin api:", domainName);
-    console.log("process.env.SUAPI_ENDPOINT", process.env.SUAPI_ENDPOINT);
+// const createSUIDP = async (domainName, UserPoolId) => {
+//   if (domainName) {
+//     console.log("registering domainName to super admin api:", domainName);
+//     console.log("process.env.SUAPI_ENDPOINT", process.env.SUAPI_ENDPOINT);
 
-    try {
-      // fetch POST request to SUAPI ENDPOINT and get clientid client secret back
-      const response = await fetch(
-        `${process.env.SUAPI_ENDPOINT}/${process.env.TENANT_ID}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            domain: domainName,
-            region: process.env.AWS_REGION,
-            tenantId: process.env.TENANT_ID,
-          }),
-        },
-      );
-      const data = await response.json();
+//     try {
+//       // fetch POST request to SUAPI ENDPOINT and get clientid client secret back
+//       const response = await fetch(
+//         `${process.env.SUAPI_ENDPOINT}/${process.env.TENANT_ID}`,
+//         {
+//           method: "POST",
+//           headers: {
+//             "Content-Type": "application/json",
+//           },
+//           body: JSON.stringify({
+//             domain: domainName,
+//             region: process.env.AWS_REGION,
+//             tenantId: process.env.TENANT_ID,
+//           }),
+//         },
+//       );
+//       const data = await response.json();
 
-      console.log("register SUAPI result", data);
+//       console.log("register SUAPI result", data);
 
-      console.log("params:", {
-        attributes_request_method: "GET",
-        client_id: data.clientId,
-        client_secret: data.clientSecret,
-        oidc_issuer: data.issuer,
-        authorize_scopes: "openid email profile",
-      });
+//       console.log("params:", {
+//         attributes_request_method: "GET",
+//         client_id: data.clientId,
+//         client_secret: data.clientSecret,
+//         oidc_issuer: data.issuer,
+//         authorize_scopes: "openid email profile",
+//       });
 
-      if (response.ok) {
-        const res = await cognito.send(
-          new CreateIdentityProviderCommand({
-            UserPoolId,
-            ProviderName: SUIDP_NAME,
-            ProviderType: "OIDC",
-            AttributeMapping: {
-              email: "email",
-              email_verified: "email_verified",
-            },
-            ProviderDetails: {
-              attributes_request_method: "GET",
-              client_id: data.clientId,
-              client_secret: data.clientSecret,
-              oidc_issuer: data.issuer,
-              authorize_scopes: "openid email profile",
-            },
-          }),
-        );
+//       if (response.ok) {
+//         const res = await cognito.send(
+//           new CreateIdentityProviderCommand({
+//             UserPoolId,
+//             ProviderName: SUIDP_NAME,
+//             ProviderType: "OIDC",
+//             AttributeMapping: {
+//               email: "email",
+//               email_verified: "email_verified",
+//             },
+//             ProviderDetails: {
+//               attributes_request_method: "GET",
+//               client_id: data.clientId,
+//               client_secret: data.clientSecret,
+//               oidc_issuer: data.issuer,
+//               authorize_scopes: "openid email profile",
+//             },
+//           }),
+//         );
 
-        console.log("create SUIDP success response:", res);
-        return true;
-      } else {
-        console.error("failed to create SUIDP with error:", data);
-      }
-    } catch (error) {
-      console.error("describe user pool client failed with:", error);
-      console.error("RequestId: " + error.requestId);
-    }
-  }
+//         console.log("create SUIDP success response:", res);
+//         return true;
+//       } else {
+//         console.error("failed to create SUIDP with error:", data);
+//       }
+//     } catch (error) {
+//       console.error("describe user pool client failed with:", error);
+//       console.error("RequestId: " + error.requestId);
+//     }
+//   }
 
-  return false;
-};
+//   return false;
+// };
 
 const createGroups = async (tenantData) => {
-  // Parse tenant data if it's a string
-  let tenants = [];
-  if (typeof tenantData === "string") {
-    try {
-      tenants = JSON.parse(tenantData);
-    } catch (error) {
-      console.error("Failed to parse tenant data:", error);
-    }
-  } else if (Array.isArray(tenantData)) {
-    tenants = tenantData;
-  } else if (tenantData && tenantData.tenantId) {
-    tenants = [tenantData];
-  } else {
-    console.error("Failed to find tenant data:", error);
-  }
+  // // Parse tenant data if it's a string
+  // let tenants = [];
+  // if (typeof tenantData === "string") {
+  //   try {
+  //     tenants = JSON.parse(tenantData);
+  //   } catch (error) {
+  //     console.error("Failed to parse tenant data:", error);
+  //   }
+  // } else if (Array.isArray(tenantData)) {
+  //   tenants = tenantData;
+  // } else if (tenantData && tenantData.tenantId) {
+  //   tenants = [tenantData];
+  // } else {
+  //   console.error("Failed to find tenant data:", error);
+  // }
 
-  console.log("Creating groups for tenants:", tenants);
+  // console.log("Creating groups for tenants:", tenants);
 
   // Create base SA group
   const baseGroups = ["SA"];
-  
-  // Create tenant-specific groups (TA_<tenantId>)
-  const tenantGroups = tenants.map((tenant) => `TA_${tenant.tenantId}`);
-  
-  // Create org-specific groups (SPA_<orgId>) from unique orgIds
-  const uniqueOrgIds = [...new Set(
-    tenants
-      .map((tenant) => tenant.orgId)
-      .filter((orgId) => orgId) // Filter out null/undefined
-  )];
-  
-  const orgGroups = uniqueOrgIds.map((orgId) => `SPA_${orgId}`);
-  
-  // If there are tenants without orgId, create SPA_default as fallback
-  const hasTenantsWithoutOrgId = tenants.some((tenant) => !tenant.orgId);
-  if (hasTenantsWithoutOrgId) {
-    orgGroups.push("SPA_default");
-  }
 
-  const allGroups = [...baseGroups, ...orgGroups, ...tenantGroups];
+  // // Create tenant-specific groups (TA_<tenantId>)
+  // const tenantGroups = tenants.map((tenant) => `TA_${tenant.tenantId}`);
+
+  // // Create org-specific groups (SPA_<orgId>) from unique orgIds
+  // const uniqueOrgIds = [
+  //   ...new Set(
+  //     tenants.map((tenant) => tenant.orgId).filter((orgId) => orgId), // Filter out null/undefined
+  //   ),
+  // ];
+
+  // const orgGroups = uniqueOrgIds.map((orgId) => `SPA_${orgId}`);
+
+  // // If there are tenants without orgId, create SPA_default as fallback
+  // const hasTenantsWithoutOrgId = tenants.some((tenant) => !tenant.orgId);
+  // if (hasTenantsWithoutOrgId) {
+  //   orgGroups.push("SPA_default");
+  // }
+
+  const allGroups = [...baseGroups]//, ...orgGroups, ...tenantGroups];
 
   console.log("Groups to create:", allGroups);
-  console.log(`- Base groups: ${baseGroups.join(", ")}`);
-  console.log(`- Org groups (${orgGroups.length}): ${orgGroups.join(", ")}`);
-  console.log(`- Tenant groups (${tenantGroups.length}): ${tenantGroups.join(", ")}`);
+  // console.log(`- Base groups: ${baseGroups.join(", ")}`);
+  // console.log(`- Org groups (${orgGroups.length}): ${orgGroups.join(", ")}`);
+  // console.log(
+  //   `- Tenant groups (${tenantGroups.length}): ${tenantGroups.join(", ")}`,
+  // );
 
   const promises = allGroups.map((group) =>
     cognito.send(
@@ -318,22 +320,23 @@ export const handler = async (event) => {
   );
 
   // Query DynamoDB for current tenant list
-  const tenantData = await getTenantsFromDynamoDB();
-  console.log("Tenant data from DynamoDB:", tenantData);
+  // const tenantData = await getTenantsFromDynamoDB();
+  // console.log("Tenant data from DynamoDB:", tenantData);
 
   const results = await Promise.allSettled([
     customiseUserpoolLogin(process.env.ADMINPOOL_ID, process.env.CLIENT_ID),
-    addSAMLProxyCallBacks(),
-    createGroups(tenantData),
-    createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID),
+    // todo: move this to tenant provision
+    // addSAMLProxyCallBacks(),
+    createGroups(/*tenantData*/),
+    // createSUIDP(adminPoolDomainName, process.env.ADMINPOOL_ID),
   ]);
 
   results.forEach((result, index) => {
     const operations = [
       "customiseUserpoolLogin",
-      "addSAMLProxyCallBacks",
+      // "addSAMLProxyCallBacks",
       "createGroups",
-      "createSUIDP",
+      // "createSUIDP",
     ];
     if (result.status === "rejected") {
       console.error(`${operations[index]} failed with:`, result.reason);
@@ -343,11 +346,11 @@ export const handler = async (event) => {
     }
   });
 
-  await addSUIdPToAdminPool(
-    process.env.ADMINPOOL_ID,
-    process.env.CLIENT_ID,
-    SUIDP_NAME,
-  );
+  // await addSUIdPToAdminPool(
+  //   process.env.ADMINPOOL_ID,
+  //   process.env.CLIENT_ID,
+  //   SUIDP_NAME,
+  // );
 
   console.log("post deployment success");
 };

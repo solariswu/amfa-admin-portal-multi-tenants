@@ -148,8 +148,21 @@ async function registerAllTenantsWithASM(config) {
 async function importTenantToDynamoDB(tenant, asmData) {
   console.log(`Importing tenant ${tenant.tenantId} to DynamoDB`);
   
+  const now = new Date().toISOString();
+  const timestamp = Date.now();
+  
   const item = {
-    id: { S: tenant.tenantId },
+    // Composite key
+    id: { S: `TENANT#${tenant.tenantId}` },
+    sk: { S: `TENANT#${now}` },
+    
+    // Entity type
+    type: { S: 'tenant' },
+    
+    // Status
+    status: { S: 'active' },
+    
+    // Tenant data
     name: { S: encodeURIComponent(tenant.tenantName) },
     contact: { S: tenant.contactEmail },
     org_id: { S: tenant.orgId },
@@ -157,12 +170,19 @@ async function importTenantToDynamoDB(tenant, asmData) {
     endUserSpUrl: { S: `https://${tenant.tenantId}.${process.env.ROOT_DOMAIN_NAME}` },
     samlproxy: { BOOL: tenant.samlproxy !== false },
     userpool: { S: '' }, // Will be populated during provisioning
+    
     // Store ASM data for reference
     asmClientId: { S: asmData.asmClientId },
     mobileTokenKey: { S: asmData.mobileTokenKey },
-    // Timestamps
-    createdAt: { N: Date.now().toString() },
-    updatedAt: { N: Date.now().toString() }
+    
+    // Audit timestamps
+    created_at: { S: now },
+    updated_at: { S: now },
+    createdAt: { N: timestamp.toString() },
+    updatedAt: { N: timestamp.toString() },
+    
+    // Version for optimistic locking
+    version: { N: '1' }
   };
   
   // Add optional description if present

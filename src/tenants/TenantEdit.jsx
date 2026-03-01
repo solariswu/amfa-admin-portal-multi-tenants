@@ -36,6 +36,7 @@ import {
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import awsmobile from "../aws-export";
 import { canDeleteTenants } from "../utils/roleUtils";
+import { TenantAdminList } from "./TenantAdminList";
 
 const apiUrl = awsmobile.aws_backend_api_url;
 
@@ -429,7 +430,7 @@ export const TenantEdit = () => {
   const MyForm = () => {
     const record = useRecordContext();
 
-    if (!record || !record.clientId)
+    if (!record || !record.id)
       return (
         <Container sx={{ padding: "15px" }}>
           <Box
@@ -557,6 +558,11 @@ export const TenantEdit = () => {
                   </Grid>
                 </Grid>
               </Grid>
+
+              {/* Tenant Administrators Section */}
+              <Box sx={{ px: 0, pb: 3 }}>
+                <TenantAdminList tenantId={record.id} orgId={record.org_id} />
+              </Box>
             </Container>
           );
         }}

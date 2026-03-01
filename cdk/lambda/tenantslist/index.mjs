@@ -95,7 +95,7 @@ export const handler = async (event) => {
         console.log("Requester role:", role, "orgId:", orgId);
 
         // Create tenant (invokes provision-tenant Lambda + creates admin if needed)
-        const result = await createTenant(body.data, role, orgId);
+        const result = await createTenant(body.data.data, role, orgId);
 
         return {
           statusCode: 200,
@@ -111,11 +111,13 @@ export const handler = async (event) => {
       } catch (error) {
         console.error("Create tenant error:", error);
 
-        const statusCode =
-          error.message.includes("permissions") ||
-          error.message.includes("only")
-            ? 403
-            : 500;
+        // Preserve status code from provision-tenant Lambda (e.g., 409 for duplicates)
+        let statusCode = error.status || error.statusCode || 500;
+        
+        // Override with 403 for permission errors
+        if (error.message.includes("permissions") || error.message.includes("only")) {
+          statusCode = 403;
+        }
 
         return {
           statusCode,
@@ -126,6 +128,7 @@ export const handler = async (event) => {
           body: JSON.stringify({
             type: "error",
             message: error.message,
+            ...(error.body && { details: error.body })
           }),
         };
       }
@@ -137,6 +140,15 @@ export const handler = async (event) => {
         ConsistentRead: true,
         ReturnConsumedCapacity: "TOTAL",
         TableName: `amfa-tenanttable`,
+        FilterExpression: "#type = :type AND #status = :status",
+        ExpressionAttributeNames: {
+          "#type": "type",
+          "#status": "status"
+        },
+        ExpressionAttributeValues: {
+          ":type": { S: "tenant" },
+          ":status": { S: "active" }
+        }
       };
 
       console.info("params", params);
@@ -148,8 +160,10 @@ export const handler = async (event) => {
       console.log("fetched data:", data);
       if (data && data.Items && data.Items.length > 0) {
         resData = data.Items.map((item) => {
+          // Remove TENANT# prefix from id
+          const tenantId = item.id.S.replace('TENANT#', '');
           return {
-            id: item.id.S,
+            id: tenantId,
             name: decodeURIComponent(item.name.S),
             contact: item.contact.S,
             url: item.url.S,
@@ -165,6 +179,30 @@ export const handler = async (event) => {
         event.headers?.authorization || event.headers?.Authorization;
       const requesterRoles = extractRequesterRoles(authHeader);
       resData = filterTenantsByRole(resData, requesterRoles);
+
+      // Apply request-level filters (e.g., org_id filter from UI)
+      if (event.queryStringParameters?.filter) {
+        try {
+          const filter = JSON.parse(event.queryStringParameters.filter);
+          if (filter.org_id) {
+            console.log(`Applying org_id filter: ${filter.org_id}`);
+            resData = resData.filter(t => t.org_id === filter.org_id);
+            console.log(`After org_id filter: ${resData.length} tenants`);
+          }
+          if (filter.q) {
+            const searchTerm = filter.q.toLowerCase();
+            console.log(`Applying search filter: ${searchTerm}`);
+            resData = resData.filter(t =>
+              t.name?.toLowerCase().includes(searchTerm) ||
+              t.id?.toLowerCase().includes(searchTerm) ||
+              t.contact?.toLowerCase().includes(searchTerm)
+            );
+            console.log(`After search filter: ${resData.length} tenants`);
+          }
+        } catch (filterError) {
+          console.error('Error parsing filter parameter:', filterError);
+        }
+      }
 
       // getList of React-admin expects response to have header called 'Content-Range'.
       // when we add new header in response, we have to acknowledge it, so 'Access-Control-Expose-Headers'

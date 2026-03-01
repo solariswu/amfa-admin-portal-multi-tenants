@@ -46,11 +46,11 @@ export async function generateAndUploadConfigs(tenantData, cognitoResources) {
   console.log(`[Config] Invalidated CloudFront cache for ${tenantId}`);
   
   // 5. Return URLs
-  const rootDomain = process.env.ROOT_DOMAIN;
+  const rootDomain = process.env.ROOT_DOMAIN_NAME;
   return {
-    awsConfig: `https://${tenantId}.${rootDomain}/awsconfig_${tenantId}.json`,
-    branding: `https://${tenantId}.${rootDomain}/branding_${tenantId}.json`,
-    tenantUrl: `https://${tenantId}.${rootDomain}`
+    awsConfig: `https://${tenantId}.login.${rootDomain}/awsconfig_${tenantId}.json`,
+    branding: `https://${tenantId}.login.${rootDomain}/branding_${tenantId}.json`,
+    tenantUrl: `https://${tenantId}.login.${rootDomain}`
   };
 }
 
@@ -58,7 +58,7 @@ export async function generateAndUploadConfigs(tenantData, cognitoResources) {
  * Generate AWS configuration JSON
  */
 function generateAWSConfig(tenantId, tenantName, cognitoResources) {
-  const rootDomain = process.env.ROOT_DOMAIN;
+  const rootDomain = process.env.ROOT_DOMAIN_NAME;
   const region = process.env.AWS_REGION;
   
   return {

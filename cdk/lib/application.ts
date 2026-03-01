@@ -1,6 +1,7 @@
 import { Certificate } from "aws-cdk-lib/aws-certificatemanager";
 import { PublicHostedZone } from "aws-cdk-lib/aws-route53";
-import { Policy, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { StringParameter } from "aws-cdk-lib/aws-ssm";
 
 import {
   CfnOutput,
@@ -14,12 +15,12 @@ import { Provider } from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 
 import { WebApplication } from "./webapp";
-import { SPPortalWebApp } from "./sp-portal-webapp";
 
 import { SSOApiGateway } from "./httpapi";
 import { SSOUserPool } from "./userpool";
-import { hostedUI_domain_prefix } from "../config";
+import { hostedUI_domain_prefix, project_name, amfa_api_base } from "../config/config";
 import { createPostDeploymentLambda } from "./postDeployment";
+import * as path from "path";
 
 export interface AppStackProps extends StackProps {
   siteCertificate: Certificate;
@@ -53,6 +54,222 @@ export class AppStack extends Stack {
 
     //using admin userpool as main authorizor
     apigateway.attachAuthorizor(userPool);
+
+    // Import SP portal infrastructure details from SSM Parameter Store
+    // These are created by the amfa-service-multi-tenants stack
+    const spPortalBucket = StringParameter.valueFromLookup(
+      this,
+      "/amfa/sp-portal/bucket-name",
+    );
+
+    const spPortalDistributionId = StringParameter.valueFromLookup(
+      this,
+      "/amfa/sp-portal/distribution-id",
+    );
+
+    // Import shared Lambda ARNs and KMS key from SSM Parameter Store
+    // These are created by the amfa-service-multi-tenants AmfaStack
+    const createAuthChallengeLambdaArn = StringParameter.valueFromLookup(
+      this,
+      "/amfa/lambda/create-auth-challenge-arn",
+    );
+
+    const defineAuthChallengeLambdaArn = StringParameter.valueFromLookup(
+      this,
+      "/amfa/lambda/define-auth-challenge-arn",
+    );
+
+    const verifyAuthChallengeLambdaArn = StringParameter.valueFromLookup(
+      this,
+      "/amfa/lambda/verify-auth-challenge-arn",
+    );
+
+    const customEmailSenderLambdaArn = StringParameter.valueFromLookup(
+      this,
+      "/amfa/lambda/custom-email-sender-arn",
+    );
+
+    const customSenderKmsKeyArn = StringParameter.valueFromLookup(
+      this,
+      "/amfa/kms/custom-sender-key-arn",
+    );
+
+    // Create provision-tenant Lambda for tenant provisioning
+    const provisionTenantLambda = new Function(this, "ProvisionTenantLambda", {
+      functionName: `${project_name}-provision-tenant-${this.region}`,
+      runtime: Runtime.NODEJS_LATEST,
+      handler: "index.handler",
+      code: Code.fromAsset(path.join(__dirname, "../lambda/provision-tenant")),
+      timeout: Duration.minutes(15),
+      memorySize: 512,
+      environment: {
+        ROOT_DOMAIN_NAME: amfa_api_base || "",
+        ACCOUNT_ID: this.account || "",
+        AMFATENANT_TABLE: "amfa-tenanttable",
+        AMFACONFIG_TABLE: "amfa-configtable",
+        ASM_SERVICE_URL: process.env.ASM_SERVICE_URL || "",
+        ASM_PORTAL_URL: process.env.ASM_PORTAL_URL || "",
+        SP_PORTAL_BUCKET: spPortalBucket, // Imported from SSM
+        CLOUDFRONT_DISTRIBUTION_ID: spPortalDistributionId, // Imported from SSM
+        // Shared Lambda ARNs for Cognito triggers (imported from SSM)
+        CREATE_AUTH_CHALLENGE_LAMBDA_ARN: createAuthChallengeLambdaArn,
+        DEFINE_AUTH_CHALLENGE_LAMBDA_ARN: defineAuthChallengeLambdaArn,
+        VERIFY_AUTH_CHALLENGE_LAMBDA_ARN: verifyAuthChallengeLambdaArn,
+        CUSTOM_EMAIL_SENDER_LAMBDA_ARN: customEmailSenderLambdaArn,
+        CUSTOM_SENDER_KMS_KEY_ARN: customSenderKmsKeyArn,
+      },
+    });
+
+    // Grant provision-tenant Lambda least-privilege permissions
+
+    // 1. Secrets Manager - Restricted to apersona/* namespace
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret",
+        ],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/*`,
+        ],
+      }),
+    );
+
+    // Secrets Manager - Write operations for org/tenant credential storage
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "secretsmanager:CreateSecret",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:PutSecretValue",
+          "secretsmanager:TagResource",
+        ],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/*`,
+        ],
+      }),
+    );
+
+    // 2. DynamoDB - Restricted to amfa-* tables
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:DescribeTable",
+        ],
+        resources: [
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/amfa-*`,
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/amfa-*/index/*`,
+        ],
+      }),
+    );
+
+    // DynamoDB - Table creation/deletion (separate for audit trail)
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "dynamodb:CreateTable",
+          "dynamodb:DeleteTable",
+          "dynamodb:TagResource",
+          "dynamodb:UntagResource",
+        ],
+        resources: [
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/amfa-*`,
+        ],
+      }),
+    );
+
+    // 3. S3 - Restricted to tenant resource buckets and shared SP portal
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+        resources: [
+          "arn:aws:s3:::*-login/*",
+          "arn:aws:s3:::*-portal/*",
+          "arn:aws:s3:::sp-portal-shared-*/*", // Shared SP portal bucket
+        ],
+      }),
+    );
+
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: ["s3:ListBucket"],
+        resources: [
+          "arn:aws:s3:::*-login",
+          "arn:aws:s3:::*-portal",
+          "arn:aws:s3:::sp-portal-shared-*", // Shared SP portal bucket
+        ],
+      }),
+    );
+
+    // 4. Cognito - Must remain broad (no resource-level permissions supported)
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "cognito-idp:CreateUserPool",
+          "cognito-idp:UpdateUserPool",
+          "cognito-idp:DeleteUserPool",
+          "cognito-idp:CreateUserPoolClient",
+          "cognito-idp:UpdateUserPoolClient",
+          "cognito-idp:DeleteUserPoolClient",
+          "cognito-idp:CreateUserPoolDomain",
+          "cognito-idp:DeleteUserPoolDomain",
+          "cognito-idp:DescribeUserPool",
+          "cognito-idp:DescribeUserPoolClient",
+          "cognito-idp:CreateIdentityProvider",  // For creating OIDC provider
+          "cognito-idp:UpdateIdentityProvider",
+          "cognito-idp:DeleteIdentityProvider",
+          "cognito-idp:DescribeIdentityProvider",
+          "cognito-idp:CreateGroup",
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:SetUserPoolMfaConfig",
+          "cognito-idp:TagResource", // Required when creating UserPool with UserPoolTags
+        ],
+        resources: ["*"], // Cognito doesn't support resource-level permissions
+      }),
+    );
+
+    // 4b. Lambda - Permission to add invoke permissions for Cognito triggers
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "lambda:AddPermission",
+          "lambda:RemovePermission",
+        ],
+        resources: [
+          `arn:aws:lambda:${this.region}:${this.account}:function:*`,
+        ],
+      }),
+    );
+
+    // 4c. KMS - Permission to create grants on the shared custom sender KMS key
+    // Required when UpdateUserPool sets CustomEmailSender with KMSKeyID
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "kms:CreateGrant",
+          "kms:DescribeKey",
+        ],
+        resources: ["*"], // KMS key ARN is dynamic (from SSM)
+      }),
+    );
+
+    // 5. CloudFront - Must remain broad (distribution IDs are dynamic)
+    provisionTenantLambda.addToRolePolicy(
+      new PolicyStatement({
+        actions: [
+          "cloudfront:CreateInvalidation",
+          "cloudfront:GetDistribution",
+        ],
+        resources: ["*"], // CloudFront doesn't support fine-grained resource restrictions
+      }),
+    );
 
     // enable admin api endpoints - multi-tenant support via DynamoDB
     apigateway.createAdminApiEndpoints(
@@ -104,5 +321,4 @@ export class AppStack extends Stack {
     // Note: Tenant information is now dynamically queried from DynamoDB
     // No need for static CloudFormation outputs
   }
-
 }

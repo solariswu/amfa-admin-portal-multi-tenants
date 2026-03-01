@@ -1,7 +1,8 @@
 import {
-	PutItemCommand,
+	QueryCommand,
+	UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { validateTenantAccess } from '/opt/nodejs/admin-auth/index.mjs';
+import { validateTenantAccess } from 'admin-auth';
 
 const samlurl = process.env.SAMLPROXY_API_URL;
 const samlReloadUrl = process.env.SAMLPROXY_RELOAD_URL;
@@ -14,7 +15,7 @@ const updateSmtp = async (id, smtp) => fetch(postURL, {
 	headers: {
 		'Content-Type': 'application/json',
 		'Accept': 'application/json',
-		'Origin': `https://${process.env.AMFA_BASE_URL}`,
+		'Origin': `https://${id}.${process.env.AMFA_BASE_URL}`,
 	},
 	body: JSON.stringify({
 		phase: 'adminupdatesmtp', tenantid: id, smtp
@@ -73,35 +74,53 @@ export const putResData = async (event, payload, previousData, dynamodb) => {
 		throw error;
 	}
 
-	const params = {
-		Item: {
-			id: {
-				S: payload.id,
-			},
-			name: {
-				S: payload.name,
-			},
-			contact: {
-				S: payload.contact,
-			},
-			url: {
-				S: payload.url,
-			},
-			endUserSpUrl: {
-				S: payload.endUserSpUrl,
-			},
-			samlproxy: {
-				BOOL: payload.samlproxy
-			},
-			org_id: {
-				S: payload.org_id || 'default' // Ensure org_id is set
-			}
-		},
-		ReturnConsumedCapacity: 'TOTAL',
+	// First, query to get the current tenant and its sk
+	const queryParams = {
 		TableName: `amfa-tenanttable`,
+		KeyConditionExpression: 'id = :id AND begins_with(sk, :sk_prefix)',
+		ExpressionAttributeValues: {
+			':id': { S: `TENANT#${payload.id}` },
+			':sk_prefix': { S: 'TENANT#' }
+		}
 	};
 
-	const item = await dynamodb.send(new PutItemCommand(params));
+	const queryResult = await dynamodb.send(new QueryCommand(queryParams));
+	
+	if (!queryResult.Items || queryResult.Items.length === 0) {
+		const error = new Error(`Tenant ${payload.id} not found`);
+		error.statusCode = 404;
+		throw error;
+	}
+
+	const currentItem = queryResult.Items[0];
+	const sk = currentItem.sk.S;
+
+	// Update the tenant using composite key
+	const now = new Date().toISOString();
+	const updateParams = {
+		TableName: `amfa-tenanttable`,
+		Key: {
+			id: { S: `TENANT#${payload.id}` },
+			sk: { S: sk }
+		},
+		UpdateExpression: 'SET #name = :name, contact = :contact, #url = :url, endUserSpUrl = :endUserSpUrl, samlproxy = :samlproxy, org_id = :org_id, updated_at = :updated_at',
+		ExpressionAttributeNames: {
+			'#name': 'name',
+			'#url': 'url'
+		},
+		ExpressionAttributeValues: {
+			':name': { S: payload.name },
+			':contact': { S: payload.contact },
+			':url': { S: payload.url },
+			':endUserSpUrl': { S: payload.endUserSpUrl },
+			':samlproxy': { BOOL: payload.samlproxy },
+			':org_id': { S: payload.org_id || 'default' },
+			':updated_at': { S: now }
+		},
+		ReturnValues: 'ALL_NEW'
+	};
+
+	const item = await dynamodb.send(new UpdateItemCommand(updateParams));
 
 	// Get authorization token from event
 	const cognitoToken = event.headers?.authorization || event.headers?.Authorization;

@@ -42,7 +42,7 @@ export async function createTenant(data, requesterRole, requesterOrgId) {
   }
 
   // 3. Validate organization exists
-  const tableName = `amfa-${process.env.AWS_ACCOUNT_ID}-${process.env.AWS_REGION}-tenanttable`;
+  const tableName = `amfa-tenanttable`;
   const org = await getOrganization(data.orgId, dynamodb, tableName);
 
   if (!org) {
@@ -85,7 +85,15 @@ export async function createTenant(data, requesterRole, requesterOrgId) {
       typeof responsePayload.body === "string"
         ? JSON.parse(responsePayload.body)
         : responsePayload.body;
-    throw new Error(errorBody.message || "Tenant provisioning failed");
+
+    // Preserve the HTTP status code for proper error handling
+    const error = new Error(
+      errorBody.error || errorBody.message || "Tenant provisioning failed",
+    );
+    error.status = responsePayload.statusCode;
+    error.statusCode = responsePayload.statusCode;
+    error.body = errorBody;
+    throw error;
   }
 
   const provisionedTenant =
@@ -95,24 +103,58 @@ export async function createTenant(data, requesterRole, requesterOrgId) {
 
   console.log("Tenant provisioned successfully:", provisionedTenant);
 
-  // 5. Create admin user if provided (SA only)
+  // 5. Create TA_<tenantId> group in admin userpool
+  const adminUserPoolId = process.env.ADMIN_USERPOOL_ID;
+  if (adminUserPoolId) {
+    const taGroupName = `TA_${data.tenantId}`;
+    try {
+      await cognito.send(
+        new CreateGroupCommand({
+          GroupName: taGroupName,
+          UserPoolId: adminUserPoolId,
+          Description: `Tenant Admin for ${data.tenantId}`,
+        }),
+      );
+      console.log(
+        `[Cognito] ✓ Created group '${taGroupName}' in admin userpool ${adminUserPoolId}`,
+      );
+    } catch (groupError) {
+      if (groupError.name === "GroupExistsException") {
+        console.log(
+          `[Cognito] Group '${taGroupName}' already exists in admin userpool, skipping`,
+        );
+      } else {
+        console.error(
+          `[Cognito] ✗ Failed to create group '${taGroupName}' in admin userpool:`,
+          groupError.message,
+        );
+        // Non-fatal: tenant was provisioned successfully
+      }
+    }
+  } else {
+    console.warn(
+      "[Cognito] ADMIN_USERPOOL_ID not configured, skipping TA group creation in admin userpool",
+    );
+  }
+
+  // 6. Create admin user if provided (SA only)
   if (
     requesterRole === "SA" &&
     data.adminEmail &&
     provisionedTenant.userPoolId
   ) {
     try {
-      console.log("Creating admin user:", data.adminEmail);
+      console.log("Creating tenant admin user:", data.adminEmail);
 
       await createAdminUser(
         provisionedTenant.userPoolId,
         data.adminEmail,
         data.adminFirstName || "",
         data.adminLastName || "",
-        data.orgId,
+        data.tenantId,
       );
 
-      console.log(`Admin user created successfully: ${data.adminEmail}`);
+      console.log(`Tenant admin user created successfully: ${data.adminEmail}`);
     } catch (error) {
       console.error("Failed to create admin user (non-fatal):", error);
       // Don't fail the whole operation - tenant was created successfully
@@ -124,16 +166,26 @@ export async function createTenant(data, requesterRole, requesterOrgId) {
 }
 
 /**
- * Create admin user in tenant's UserPool and add to SPA_<orgId> group
+ * Create admin user in tenant's UserPool and add to TA_<tenantId> group
  *
  * @param {string} userPoolId - Cognito UserPool ID
  * @param {string} email - Admin email
  * @param {string} firstName - Admin first name
  * @param {string} lastName - Admin last name
- * @param {string} orgId - Organization ID
+ * @param {string} tenantId - Tenant ID
  */
-async function createAdminUser(userPoolId, email, firstName, lastName, orgId) {
-  console.log("Creating admin user in UserPool:", { userPoolId, email, orgId });
+async function createAdminUser(
+  userPoolId,
+  email,
+  firstName,
+  lastName,
+  tenantId,
+) {
+  console.log("Creating admin user in UserPool:", {
+    userPoolId,
+    email,
+    tenantId,
+  });
 
   // 1. Create user
   await cognito.send(
@@ -152,15 +204,15 @@ async function createAdminUser(userPoolId, email, firstName, lastName, orgId) {
 
   console.log("User created, now creating/adding to group");
 
-  // 2. Create SPA group if doesn't exist
-  const groupName = `SPA_${orgId}`;
+  // 2. Create TA group if doesn't exist
+  const groupName = `TA_${tenantId}`;
 
   try {
     await cognito.send(
       new CreateGroupCommand({
         GroupName: groupName,
         UserPoolId: userPoolId,
-        Description: `Service Provider Admin for ${orgId}`,
+        Description: `Tenant Admin for ${tenantId}`,
       }),
     );
     console.log(`Created group: ${groupName}`);

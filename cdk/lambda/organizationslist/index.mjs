@@ -8,7 +8,7 @@ import {
 } from "./crud.mjs";
 
 const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
-const TABLE_NAME = `amfa-${process.env.ACCOUNT_ID}-${process.env.AWS_REGION}-tenanttable`;
+const TABLE_NAME = `amfa-tenanttable`;
 
 /**
  * Extract user information from JWT token
@@ -180,6 +180,8 @@ export const handler = async (event) => {
       const updatedOrg = await updateOrganization(
         event.pathParameters.id,
         body.data || body,
+        userInfo.email,
+        userInfo.name,
         dynamodb,
         TABLE_NAME,
       );

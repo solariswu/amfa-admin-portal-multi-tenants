@@ -3,11 +3,22 @@ import {
   AdminAddUserToGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from "@aws-sdk/client-secrets-manager";
+
+import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
+
+const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
+
 // Import shared auth utilities from lambda layer
 import {
   validateGroupCreationPermission,
   getAvailableTAGroupsForRole,
 } from "admin-auth";
+
+const secretsManager = new SecretsManagerClient({ region: process.env.AWS_REGION });
 
 // Assign groups/applications to user
 const assignApplications = async (groups, username, cognitoISP) => {
@@ -71,9 +82,186 @@ function generatePassword(lower, upper, number, symbol, length) {
   return generatedPassword.slice(0, length);
 }
 
+/**
+ * Register SPA admin with ASM portal
+ * Reads the org's serviceProviderId from Secrets Manager and calls addServiceProviderAdmin.ap
+ *
+ * @param {string} email - The SPA admin's email
+ * @param {string} orgId - The organization ID
+ * @param {string} requestedBy - The email of the user who initiated the request
+ */
+async function registerSPAAdminWithASM(email, orgId, requestedBy) {
+  const asmPortalUrl = process.env.ASM_PORTAL_URL;
+  if (!asmPortalUrl) {
+    console.warn("[ASM] ASM_PORTAL_URL not configured, skipping SPA admin registration with ASM");
+    return;
+  }
+
+  // Read org ASM credentials from Secrets Manager
+  const secretName = `apersona/asm/org/${orgId}`;
+  console.log(`[ASM] Reading org credentials from ${secretName}...`);
+
+  let orgCredentials;
+  try {
+    const secretResult = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: secretName }),
+    );
+    orgCredentials = JSON.parse(secretResult.SecretString);
+  } catch (secretError) {
+    throw new Error(`Failed to read org credentials from Secrets Manager (${secretName}): ${secretError.message}`);
+  }
+
+  const serviceProviderId = orgCredentials.serviceProviderId;
+  if (!serviceProviderId) {
+    throw new Error(`No serviceProviderId found in org credentials for org '${orgId}'`);
+  }
+
+  console.log(`[ASM] Registering SPA admin with ASM portal...`);
+  console.log(`[ASM]   URL: ${asmPortalUrl}/addServiceProviderAdmin.ap`);
+  console.log(`[ASM]   email: ${email}`);
+  console.log(`[ASM]   serviceProviderId: ${serviceProviderId}`);
+  console.log(`[ASM]   requestedBy: ${requestedBy}`);
+
+  const formData = new URLSearchParams({
+    email: email,
+    serviceProviderId: serviceProviderId,
+    requestedBy: requestedBy,
+  });
+
+  const response = await fetch(`${asmPortalUrl}/addServiceProviderAdmin.ap`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formData.toString(),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ASM addServiceProviderAdmin failed (${response.status}): ${errorText}`);
+  }
+
+  const result = await response.json();
+  console.log(`[ASM] ✓ SPA admin registered with ASM:`, JSON.stringify(result));
+
+  return result;
+}
+
+/**
+ * Register Tenant Admin with ASM portal
+ * Reads tenant's asmClientId, org's asmSecretKey, and tenant name from DynamoDB/Secrets Manager
+ * then calls tenantAdmin.ap
+ *
+ * @param {string} email - The TA admin's email
+ * @param {string} tenantId - The tenant ID (our internal ID, e.g., "mytenant")
+ * @param {string} requestedBy - The email of the user who initiated the request
+ */
+async function registerTAAdminWithASM(email, tenantId, requestedBy) {
+  const asmPortalUrl = process.env.ASM_PORTAL_URL;
+  if (!asmPortalUrl) {
+    console.warn("[ASM] ASM_PORTAL_URL not configured, skipping TA admin registration with ASM");
+    return;
+  }
+
+  // Step 1: Read tenant ASM credentials from Secrets Manager to get asmClientId and orgId
+  const tenantSecretName = `apersona/asm/tenant/${tenantId}`;
+  console.log(`[ASM] Reading tenant credentials from ${tenantSecretName}...`);
+
+  let tenantCredentials;
+  try {
+    const secretResult = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: tenantSecretName }),
+    );
+    tenantCredentials = JSON.parse(secretResult.SecretString);
+  } catch (secretError) {
+    throw new Error(`Failed to read tenant credentials from Secrets Manager (${tenantSecretName}): ${secretError.message}`);
+  }
+
+  const asmClientId = tenantCredentials.asmClientId;
+  const orgId = tenantCredentials.orgId;
+  if (!asmClientId) {
+    throw new Error(`No asmClientId found in tenant credentials for tenant '${tenantId}'`);
+  }
+  if (!orgId) {
+    throw new Error(`No orgId found in tenant credentials for tenant '${tenantId}'`);
+  }
+
+  // Step 2: Read org ASM credentials from Secrets Manager to get asmSecretKey
+  const orgSecretName = `apersona/asm/org/${orgId}`;
+  console.log(`[ASM] Reading org credentials from ${orgSecretName}...`);
+
+  let orgCredentials;
+  try {
+    const secretResult = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: orgSecretName }),
+    );
+    orgCredentials = JSON.parse(secretResult.SecretString);
+  } catch (secretError) {
+    throw new Error(`Failed to read org credentials from Secrets Manager (${orgSecretName}): ${secretError.message}`);
+  }
+
+  const asmSecretKey = orgCredentials.asmSecretKey;
+  if (!asmSecretKey) {
+    throw new Error(`No asmSecretKey found in org credentials for org '${orgId}'`);
+  }
+
+  // Step 3: Read tenant name from DynamoDB
+  let tenantName = tenantId; // fallback to tenantId if lookup fails
+  try {
+    const queryResult = await dynamodb.send(new QueryCommand({
+      TableName: "amfa-tenanttable",
+      KeyConditionExpression: "id = :id AND begins_with(sk, :sk_prefix)",
+      ExpressionAttributeValues: {
+        ":id": { S: `TENANT#${tenantId}` },
+        ":sk_prefix": { S: "TENANT#" },
+      },
+    }));
+    if (queryResult.Items && queryResult.Items.length > 0) {
+      tenantName = queryResult.Items[0].name?.S || tenantId;
+    }
+  } catch (dbError) {
+    console.warn(`[ASM] Could not read tenant name from DynamoDB (non-fatal): ${dbError.message}`);
+  }
+
+  const awsAccountId = process.env.ACCOUNT_ID || "";
+
+  console.log(`[ASM] Registering TA admin with ASM portal...`);
+  console.log(`[ASM]   URL: ${asmPortalUrl}/tenantAdmin.ap`);
+  console.log(`[ASM]   tenantId (asmClientId): ${asmClientId}`);
+  console.log(`[ASM]   tenantName: ${tenantName}`);
+  console.log(`[ASM]   tenantAdminEmail: ${email}`);
+  console.log(`[ASM]   action: add`);
+  console.log(`[ASM]   requestedBy: ${requestedBy}`);
+  console.log(`[ASM]   awsAccountId: ${awsAccountId}`);
+
+  const formData = new URLSearchParams({
+    tenantId: asmClientId,
+    tenantName: tenantName,
+    tenantAdminEmail: email,
+    action: "add",
+    requestedBy: requestedBy,
+    awsAccountId: awsAccountId,
+    asmSecretKey: asmSecretKey,
+  });
+
+  const response = await fetch(`${asmPortalUrl}/tenantAdmin.ap`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formData.toString(),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`ASM tenantAdmin.ap failed (${response.status}): ${errorText}`);
+  }
+
+  const result = await response.json();
+  console.log(`[ASM] ✓ TA admin registered with ASM:`, JSON.stringify(result));
+
+  return result;
+}
+
 // Main function to create user
-export const postResData = async (data, cognitoISP, requesterRoles = []) => {
-  console.log("postResData Input:", { data, requesterRoles });
+export const postResData = async (data, cognitoISP, requesterRoles = [], requesterEmail = "") => {
+  console.log("postResData Input:", { data, requesterRoles, requesterEmail });
 
   const groups = [];
   const attributes = [];
@@ -179,6 +367,30 @@ export const postResData = async (data, cognitoISP, requesterRoles = []) => {
           await assignApplications(finalGroups, item.Username, cognitoISP);
         } catch (err) {
           console.log("create user - assignApplications/groups Error:", err);
+        }
+      }
+
+      // Register SPA admin with ASM portal if assigned to an SPA_ group
+      const spaGroup = finalGroups.find(g => g.startsWith("SPA_"));
+      if (spaGroup) {
+        const orgId = spaGroup.substring(4); // Extract orgId from SPA_<orgId>
+        try {
+          await registerSPAAdminWithASM(data["email"].trim().toLowerCase(), orgId, requesterEmail || data["email"].trim().toLowerCase());
+        } catch (asmError) {
+          console.error("[ASM] Failed to register SPA admin (non-fatal):", asmError.message);
+          // Non-fatal: user was created and added to group successfully
+        }
+      }
+
+      // Register TA admin with ASM portal if assigned to a TA_ group
+      const taGroup = finalGroups.find(g => g.startsWith("TA_"));
+      if (taGroup) {
+        const tenantId = taGroup.substring(3); // Extract tenantId from TA_<tenantId>
+        try {
+          await registerTAAdminWithASM(data["email"].trim().toLowerCase(), tenantId, requesterEmail || data["email"].trim().toLowerCase());
+        } catch (asmError) {
+          console.error("[ASM] Failed to register TA admin (non-fatal):", asmError.message);
+          // Non-fatal: user was created and added to group successfully
         }
       }
       

@@ -1,4 +1,4 @@
-import { DynamoDBClient, GetItemCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, GetItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
 import { CognitoIdentityProviderClient, DescribeUserPoolCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
 
@@ -43,14 +43,16 @@ export const handler = async (event) => {
         promises.push(dynamodb.send(new GetItemCommand(params)));
     });
 
-    // Fetch tenant SAML info
+    // Fetch tenant SAML info using composite key
     const tenantParams = {
         TableName: process.env.AMFATENANT_TABLE,
-        Key: {
-            id: { S: tenantId },
-        },
+        KeyConditionExpression: 'id = :id AND begins_with(sk, :sk_prefix)',
+        ExpressionAttributeValues: {
+            ':id': { S: `TENANT#${tenantId}` },
+            ':sk_prefix': { S: 'TENANT#' }
+        }
     };
-    promises.push(dynamodb.send(new GetItemCommand(tenantParams)));
+    promises.push(dynamodb.send(new QueryCommand(tenantParams)));
 
     // Describe user pool to get total user count
     promises.push(cognito.send(new DescribeUserPoolCommand({
@@ -77,10 +79,13 @@ export const handler = async (event) => {
     }
 
     // Parse and return results
+    // Note: tenantRes is now a Query result (Items array) not GetItem (Item)
+    const tenantItem = tenantRes.value.Items?.[0];
+    
     return createResponse(200, {
         amfaConfigs: configRes.value.Item?.value?.S ? JSON.parse(configRes.value.Item.value.S) : {},
         amfaPolicies: policyRes.value.Item?.value?.S ? JSON.parse(policyRes.value.Item.value.S) : {},
-        samlProxyEnabled: tenantRes.value.Item?.samlproxy?.BOOL ?? false,
+        samlProxyEnabled: tenantItem?.samlproxy?.BOOL ?? false,
         totalUserNumber: cognitoRes.value.UserPool?.EstimatedNumberOfUsers ?? 0,
     });
 };

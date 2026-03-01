@@ -227,6 +227,48 @@ async function createImoprtJobTable(tenantId) {
 }
 
 /**
+ * Wait for table to be deleted (DynamoDB deletion is asynchronous)
+ * @param {string} tableName - Table name to wait for
+ * @param {number} maxWaitTime - Maximum wait time in seconds (default 60)
+ */
+async function waitForTableDeletion(tableName, maxWaitTime = 60) {
+  const startTime = Date.now();
+  const maxWaitMs = maxWaitTime * 1000;
+  
+  console.log(`[Tables] Waiting for ${tableName} to be deleted...`);
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const response = await dynamodb.send(
+        new DescribeTableCommand({ TableName: tableName })
+      );
+      
+      const status = response.Table.TableStatus;
+      
+      if (status === 'DELETING') {
+        console.log(`[Tables] ${tableName} is being deleted, waiting...`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+        continue;
+      }
+      
+      // Table still exists and not deleting - unexpected
+      console.warn(`[Tables] ${tableName} exists with status: ${status}`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+    } catch (error) {
+      if (error instanceof ResourceNotFoundException) {
+        // Table successfully deleted
+        console.log(`[Tables] ✓ ${tableName} deletion confirmed`);
+        return;
+      }
+      throw error;
+    }
+  }
+  
+  throw new Error(`Timeout waiting for ${tableName} to be deleted after ${maxWaitTime}s`);
+}
+
+/**
  * Delete per-tenant tables (for rollback)
  * NEVER delete the shared config table!
  *
@@ -251,7 +293,11 @@ export async function deleteTenantTables(tenantId) {
   for (const tableName of tableNames) {
     try {
       await dynamodb.send(new DeleteTableCommand({ TableName: tableName }));
-      console.log(`[Tables] ✓ Deleted ${tableName}`);
+      console.log(`[Tables] ✓ Deletion initiated for ${tableName}`);
+      
+      // Wait for table to be actually deleted
+      await waitForTableDeletion(tableName);
+      
     } catch (error) {
       if (error instanceof ResourceNotFoundException) {
         console.log(`[Tables] ⊘ ${tableName} does not exist (already deleted)`);

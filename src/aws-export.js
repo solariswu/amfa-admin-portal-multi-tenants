@@ -1,11 +1,12 @@
 /* eslint-disable */
 
 // import { AdminHostedUIURL, AdminPortalClientId, AdminPortalUserPoolId, ProjectRegion, AdminPortalDomainName } from "/amfaext.js";
-export const AdminPortalUserPoolId="us-east-1_Mv1lzMH2F"
-export const AdminPortalClientId="7edl3tblr7rfsvga8vje22f9i2"
-export const AdminHostedUIURL="https://adminportal-1jo2opi.auth.us-east-1.amazoncognito.com"
+export const AdminPortalUserPoolId="us-east-1_4lHCLz1bE"
+export const AdminPortalClientId="5d27k9lkshkmrquvo5jok6219k"
+export const AdminHostedUIURL="https://adminportal-jlriby.auth.us-east-1.amazoncognito.com"
 export const ProjectRegion='us-east-1'
-export const AdminPortalDomainName='adminportal.amfa4.aws-amplify.dev'
+export const AdminPortalDomainName='adminportal.amfa7.aws-amplify.dev'
+
 
 const awsmobile = {
 	aws_project_region: ProjectRegion,

@@ -157,6 +157,21 @@ const getUsers = async (
   return { users: resData, paginationToken, statusCode: 200 };
 };
 
+// Helper to extract email from JWT header
+const extractEmailFromHeader = (authHeader) => {
+  try {
+    const jwt = authHeader;
+    const jwtBase64Url = jwt.split(".")[1];
+    const jwtBase64 = jwtBase64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jwtBuffer = Buffer.from(jwtBase64, "base64");
+    const jwtPayload = JSON.parse(jwtBuffer.toString("ascii"));
+    return jwtPayload.email || "";
+  } catch (error) {
+    console.log("Error extracting email from header:", error);
+    return "";
+  }
+};
+
 // Helper to extract and prioritize roles from JWT header
 const extractRolesFromHeader = (authHeader) => {
   try {
@@ -209,14 +224,16 @@ export const handler = async (event) => {
       const body = JSON.parse(event.body);
       console.log("POST data: ", body);
 
-      // Extract requester roles from JWT for RBAC validation
+      // Extract requester roles and email from JWT for RBAC validation
       const requesterRoles = extractRolesFromHeader(event.headers["authorization"]);
-      console.log("POST requester roles:", requesterRoles);
+      const requesterEmail = extractEmailFromHeader(event.headers["authorization"]);
+      console.log("POST requester roles:", requesterRoles, "requester email:", requesterEmail);
 
       const postResult = await postResData(
         body.data,
         cognitoISP,
         requesterRoles,
+        requesterEmail,
       );
 
       return {

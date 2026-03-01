@@ -40,16 +40,23 @@ export const handler = async (event) => {
     // Get accessible tenants based on role
     const getAccessibleTenants = async () => {
         if (role === 'SA') {
-            // Super Admin: Get all tenants
+            // Super Admin: Get all tenants (filter by type)
             const scanResult = await dynamodb.send(new ScanCommand({
                 TableName: process.env.AMFATENANT_TABLE,
+                FilterExpression: '#type = :type AND #status = :status',
                 ProjectionExpression: 'id, #n, org_id',
                 ExpressionAttributeNames: {
-                    '#n': 'name'
+                    '#n': 'name',
+                    '#type': 'type',
+                    '#status': 'status'
+                },
+                ExpressionAttributeValues: {
+                    ':type': { S: 'tenant' },
+                    ':status': { S: 'active' }
                 }
             }));
             return scanResult.Items?.map(item => ({
-                id: item.id.S,
+                id: item.id.S.replace('TENANT#', ''), // Strip prefix
                 name: item.name?.S,
                 org_id: item.org_id?.S
             })) || [];
@@ -60,16 +67,21 @@ export const handler = async (event) => {
                 TableName: process.env.AMFATENANT_TABLE,
                 IndexName: 'org-id-index',
                 KeyConditionExpression: 'org_id = :orgId',
+                FilterExpression: '#type = :type AND #status = :status',
                 ExpressionAttributeValues: {
-                    ':orgId': { S: orgId }
+                    ':orgId': { S: orgId },
+                    ':type': { S: 'tenant' },
+                    ':status': { S: 'active' }
                 },
                 ProjectionExpression: 'id, #n, org_id',
                 ExpressionAttributeNames: {
-                    '#n': 'name'
+                    '#n': 'name',
+                    '#type': 'type',
+                    '#status': 'status'
                 }
             }));
             return queryResult.Items?.map(item => ({
-                id: item.id.S,
+                id: item.id.S.replace('TENANT#', ''), // Strip prefix
                 name: item.name?.S,
                 org_id: item.org_id?.S
             })) || [];

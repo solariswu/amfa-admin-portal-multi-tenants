@@ -20,8 +20,8 @@ export const stage_config = {
 	},
 }
 
-export const AMFACONFIG_TABLE = `${service_name}-${stage_config[current_stage].env.account}-${stage_config[current_stage].env.region}-configtable`;
-export const AMFATENANT_TABLE = `${service_name}-${stage_config[current_stage].env.account}-${stage_config[current_stage].env.region}-tenanttable`;
+export const AMFACONFIG_TABLE = `amfa-configtable`;
+export const AMFATENANT_TABLE = `amfa-tenanttable`;
 
 export const hostedUI_domain_prefix = `${project_name}`;
 // export const apps_urls = [process.env.EXTRA_APP_URL ? process.env.EXTRA_APP_URL : ''];

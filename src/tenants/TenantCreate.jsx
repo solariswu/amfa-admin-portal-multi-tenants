@@ -122,18 +122,71 @@ export const TenantCreate = () => {
   };
 
   const onSuccess = (data) => {
-    notify(`Tenant "${data.tenantName || data.tenantId}" created successfully!`, { 
+    notify(`Tenant "${data.name || data.id}" created successfully!`, { 
       type: 'success',
       multiLine: true 
     });
-    redirect('show', 'tenants', data.id || data.tenantId);
+    redirect('show', 'tenants', data.id);
   };
 
   const onError = (error) => {
-    notify(`Failed to create tenant: ${error.message}`, { 
-      type: 'error',
-      multiLine: true 
-    });
+    console.error('Tenant creation error:', error);
+    
+    // Extract status code from error object
+    const statusCode = error.status || error.statusCode || (error.body && error.body.statusCode);
+    
+    // Handle different error types with user-friendly messages
+    if (statusCode === 409) {
+      // HTTP 409 Conflict - Duplicate tenant ID
+      notify(
+        'This Tenant ID already exists. Please choose a different Tenant ID and try again.', 
+        { 
+          type: 'warning',
+          multiLine: true,
+          autoHideDuration: 6000
+        }
+      );
+    } else if (statusCode === 403) {
+      // HTTP 403 Forbidden - Permission denied
+      notify(
+        `Permission denied: You don't have permission to create tenants in this organization.`, 
+        { 
+          type: 'error',
+          multiLine: true,
+          autoHideDuration: 6000
+        }
+      );
+    } else if (statusCode === 400) {
+      // HTTP 400 Bad Request - Validation error
+      notify(
+        `Invalid tenant data: ${error.message || 'Please check your input and try again.'}`, 
+        { 
+          type: 'error',
+          multiLine: true,
+          autoHideDuration: 6000
+        }
+      );
+    } else if (statusCode >= 500) {
+      // HTTP 5xx - Server error
+      notify(
+        `Server error: Failed to create tenant. Please try again later or contact support.`, 
+        { 
+          type: 'error',
+          multiLine: true,
+          autoHideDuration: 8000
+        }
+      );
+    } else {
+      // Generic error
+      notify(
+        `Failed to create tenant: ${error.message || 'An unexpected error occurred.'}`, 
+        { 
+          type: 'error',
+          multiLine: true,
+          autoHideDuration: 6000
+        }
+      );
+    }
   };
 
   return (
@@ -249,10 +302,10 @@ export const TenantCreate = () => {
                 <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                   <Box>
                     <Typography variant="h6">
-                      Assign Initial SPA Admin (Optional)
+                      Assign Initial Tenant Admin (Optional)
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Create and invite a Service Provider Admin for this tenant
+                      Create and invite a Tenant Admin for this tenant
                     </Typography>
                   </Box>
                 </AccordionSummary>
@@ -260,7 +313,7 @@ export const TenantCreate = () => {
                   <Grid container spacing={2}>
                     <Grid item xs={12}>
                       <Alert severity="info" sx={{ mb: 2 }}>
-                        The user will be created in the tenant's UserPool and added to the SPA_{'<orgId>'} group. 
+                        The user will be created in the admin UserPool and added to the TA_{'<tenantId>'} group. 
                         They will receive an invitation email with temporary password.
                       </Alert>
                     </Grid>

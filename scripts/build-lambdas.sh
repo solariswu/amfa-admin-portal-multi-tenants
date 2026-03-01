@@ -30,7 +30,6 @@ LAMBDAS=(
   "samls:1:"
   "smtpconfig:1:--legacy-peer-deps"
   "multi-tenant-authorizer:0:"
-  "organizationslist:0:"
   "tenantslist:0:"
   "totptoken:1"
 )
