@@ -252,12 +252,13 @@ export const TenantEdit = () => {
   };
 
   const EditActions = () => {
+    const record = useRecordContext();
     const [showDelete, setShowDelete] = useState(false);
 
     useEffect(() => {
       const token = localStorage.getItem('token');
-      setShowDelete(canDeleteTenants(token));
-    }, []);
+      setShowDelete(canDeleteTenants(token, record?.org_id));
+    }, [record?.org_id]);
 
     return (
       <TopToolbar>

@@ -78,7 +78,7 @@ export const App = () => (
         <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
         <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />
         <Resource options={{ label: 'Organizations' }} name="organizations" {...organizations} />
-        <Resource options={{ label: 'Settings' }} name="tenants" {...tenants} />
+        <Resource options={{ label: 'Tenants' }} name="tenants" {...tenants} />
         <Resource options={{ label: 'Brandings' }} name="brandings" {...brandings} />
         <Resource options={{ label: 'Admin' }} name="admins" {...admins} />
         {/* <CustomRoutes>

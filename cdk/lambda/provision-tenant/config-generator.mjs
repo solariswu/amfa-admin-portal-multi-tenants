@@ -56,18 +56,22 @@ export async function generateAndUploadConfigs(tenantData, cognitoResources) {
 
 /**
  * Generate AWS configuration JSON
+ * 
+ * Field names must match what the SP Portal frontend expects:
+ * - aws_project_region, aws_user_pools_id, aws_user_pools_web_client_id,
+ *   aws_oauth_domain, apiUrl, amfa_service_domain
  */
 function generateAWSConfig(tenantId, tenantName, cognitoResources) {
   const rootDomain = process.env.ROOT_DOMAIN_NAME;
   const region = process.env.AWS_REGION;
   
   return {
-    ProjectRegion: region,
-    EndUserPoolId: cognitoResources.userPoolId,
-    EndUserAppClientId: cognitoResources.spPortalClientId,
-    OAuthDomainName: cognitoResources.oauthDomain,
-    AdminAPIUrl: `https://api.adminportal.${rootDomain}`,
-    AmfaServiceDomain: `${tenantId}.${rootDomain}`,
+    aws_project_region: region,
+    aws_user_pools_id: cognitoResources.userPoolId,
+    aws_user_pools_web_client_id: cognitoResources.spPortalClientId,
+    aws_oauth_domain: cognitoResources.oauthDomain,
+    apiUrl: `https://api.${rootDomain}`,
+    amfa_service_domain: `${tenantId}.idapersona.${rootDomain}`,
     TenantId: tenantId,
     TenantName: tenantName,
     // Additional metadata
@@ -80,32 +84,35 @@ function generateAWSConfig(tenantId, tenantName, cognitoResources) {
 }
 
 /**
- * Generate branding configuration JSON with defaults from environment
+ * Generate branding configuration JSON with defaults from environment.
+ * 
+ * Field names must match what the SP Portal frontend expects
+ * (App.jsx, LoginPage.jsx, ServiceProvidersList.jsx).
  */
 function generateBranding(tenantId, tenantName) {
   return {
-    // Company branding
-    companyName: tenantName,
-    logo: process.env.DEFAULT_LOGO || '/logo.png',
-    favicon: process.env.DEFAULT_FAVICON || '/favicon.ico',
-    
-    // Color scheme
-    primaryColor: process.env.DEFAULT_PRIMARY_COLOR || '#007bff',
-    secondaryColor: process.env.DEFAULT_SECONDARY_COLOR || '#6c757d',
-    successColor: process.env.DEFAULT_SUCCESS_COLOR || '#28a745',
-    warningColor: process.env.DEFAULT_WARNING_COLOR || '#ffc107',
-    dangerColor: process.env.DEFAULT_DANGER_COLOR || '#dc3545',
-    infoColor: process.env.DEFAULT_INFO_COLOR || '#17a2b8',
-    
-    // Typography
-    fontFamily: process.env.DEFAULT_FONT_FAMILY || 'Arial, sans-serif',
-    headingFontFamily: process.env.DEFAULT_HEADING_FONT_FAMILY || 'Arial, sans-serif',
-    fontSize: process.env.DEFAULT_FONT_SIZE || '14px',
-    
-    // Layout
-    borderRadius: process.env.DEFAULT_BORDER_RADIUS || '4px',
-    boxShadow: process.env.DEFAULT_BOX_SHADOW || '0 2px 4px rgba(0,0,0,0.1)',
-    
+    id: tenantId,
+    name: tenantName,
+
+    // App title and logo URLs
+    app_title_msg: tenantName || 'End User Portal',
+    app_login_logo_url: process.env.DEFAULT_LOGIN_LOGO || 'https://downloads.apersona.com/logos/logo-here_250x50.png',
+    fav_icon_url: process.env.DEFAULT_FAVICON || 'https://downloads.apersona.com/logos/favicon.png',
+    app_bar_logo_url: process.env.DEFAULT_BAR_LOGO || 'https://downloads.apersona.com/logos/logo-here_white_250x50.png',
+    app_terms_url: process.env.DEFAULT_TERMS_URL || 'https://www.apersona.com/licensing',
+    app_privacy_url: process.env.DEFAULT_PRIVACY_URL || 'https://www.apersona.com/privacy',
+
+    // Color scheme (matching frontend expectations)
+    login_page_center_color: process.env.DEFAULT_LOGIN_CENTER_COLOR || '#808080',
+    login_page_outter_color: process.env.DEFAULT_LOGIN_OUTER_COLOR || '#9B9B9B',
+    app_bar_start_color: process.env.DEFAULT_BAR_START_COLOR || '#083173',
+    app_bar_end_color: process.env.DEFAULT_BAR_END_COLOR || '#083173',
+    app_title_icon_color: process.env.DEFAULT_TITLE_ICON_COLOR || '#F9F9F9',
+
+    // Portal content
+    portal_title_msg: process.env.DEFAULT_PORTAL_TITLE || 'Service Providers',
+    portal_description_msg: process.env.DEFAULT_PORTAL_DESC || 'All available single sign-on services are listed below. Remove any that you do not personally use.',
+
     // Additional metadata
     _meta: {
       version: '2.0',

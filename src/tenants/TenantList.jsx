@@ -9,6 +9,7 @@ import {
 	CreateButton, 
 	TopToolbar,
 	useGetList,
+	usePermissions,
 	Link,
 	SelectInput,
 	ReferenceInput
@@ -70,10 +71,10 @@ const Pagination = () => {
 }
 
 /**
- * Filters for tenant list
- * Allows filtering by organization
+ * Filters for tenant list (SA only)
+ * SA can filter by organization; SPA already sees only their org's tenants
  */
-const TenantFilters = [
+const TenantFiltersSA = [
 	<ReferenceInput 
 		source="org_id" 
 		reference="organizations"
@@ -85,6 +86,11 @@ const TenantFilters = [
 ];
 
 export const TenantList = props => {
+	const { permissions } = usePermissions();
+	
+	// Only SA sees the org filter; SPA sees only their org's tenants (backend-filtered)
+	const tenantFilters = permissions?.isSA ? TenantFiltersSA : [];
+	
 	// Load organizations to display names
 	const { data: organizations, isLoading: orgsLoading } = useGetList('organizations', {
 		pagination: { page: 1, perPage: 1000 }
@@ -106,7 +112,7 @@ export const TenantList = props => {
 				perPage={10} 
 				pagination={<Pagination />}
 				actions={<ListActions />}
-				filters={TenantFilters}
+				filters={tenantFilters}
 				exporter={false}
 			>
 				<Datagrid rowClick="show" bulkActionButtons={false} optimized>

@@ -187,7 +187,7 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
               startIcon={<PersonAddIcon />}
               onClick={handleInviteTA}
             >
-              Invite TA Admin
+              Invite Admin
             </Button>
           )}
         </Box>
@@ -201,7 +201,7 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
           <Alert severity="error">Failed to load administrators</Alert>
         ) : !admins || admins.length === 0 ? (
           <Typography color="text.secondary" sx={{ py: 2 }}>
-            No TA administrators found for this tenant.
+            No tenant administrators found for this tenant.
           </Typography>
         ) : (
           <TableContainer>

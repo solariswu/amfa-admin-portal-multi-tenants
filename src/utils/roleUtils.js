@@ -182,13 +182,28 @@ export function canCreateTenants(token) {
 }
 
 /**
- * Check if user can delete tenants (SA only)
+ * Check if user can delete tenants
+ * SA can delete any tenant; SPA can delete tenants in their org
  * 
  * @param {string} token - JWT token
+ * @param {string} [tenantOrgId] - Organization ID of the tenant (optional, for org-level check)
  * @returns {boolean}
  */
-export function canDeleteTenants(token) {
-  return isSuperAdmin(token);
+export function canDeleteTenants(token, tenantOrgId) {
+  const { role, orgId } = getRoleFromToken(token);
+  
+  // SA can delete any tenant
+  if (role === 'SA') return true;
+  
+  // SPA can delete tenants belonging to their organization
+  if (role === 'SPA') {
+    // If no tenantOrgId provided, return true (general permission check)
+    if (!tenantOrgId) return true;
+    // Otherwise check if tenant belongs to SPA's org
+    return orgId === tenantOrgId;
+  }
+  
+  return false;
 }
 
 /**

@@ -408,15 +408,18 @@ async function createSAMLClient(userPoolId, tenantId, tenantName) {
 async function createHostedUIClient(userPoolId, tenantId, tenantName) {
   const rootDomain = process.env.ROOT_DOMAIN_NAME;
 
-  // Callback URLs - matching CDK pattern
+  // Callback URLs - include both login (SP Portal) and idapersona (AMFA Service) domains
   const callbackUrls = [
+    `https://${tenantId}.login.${rootDomain}/`,
+    `https://${tenantId}.login.${rootDomain}/auth-callback`,
     `https://${tenantId}.idapersona.${rootDomain}/`,
     `https://${tenantId}.idapersona.${rootDomain}/callback`,
     "http://localhost:3000/",
-    "http://localhost:3000/callback",
+    "http://localhost:3000/auth-callback",
   ];
 
   const logoutUrls = [
+    `https://${tenantId}.login.${rootDomain}/`,
     `https://${tenantId}.idapersona.${rootDomain}/`,
     "http://localhost:3000/",
   ];

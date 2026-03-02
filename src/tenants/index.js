@@ -1,15 +1,16 @@
 import { TenantList } from "./TenantList";
+import { TenantShow } from "./TenantShow";
 import { TenantEdit } from "./TenantEdit";
 import { TenantCreate } from "./TenantCreate";
-import SettingsIcon from '@mui/icons-material/Settings';
+import ApartmentIcon from '@mui/icons-material/Apartment';
 
-const tenants ={
+const tenants = {
   list: TenantList,
-  show: TenantEdit,
+  show: TenantShow,
   edit: TenantEdit,
   create: TenantCreate,
-  icon: SettingsIcon,
-  recordRepresentation: "model",
+  icon: ApartmentIcon,
+  recordRepresentation: "name",
 };
 
 export default tenants;
