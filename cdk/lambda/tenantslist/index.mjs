@@ -191,6 +191,7 @@ export const handler = async (event) => {
             endUserSpUrl: item.endUserSpUrl.S,
             samlproxy: item.samlproxy?.BOOL,
             org_id: item.org_id?.S || "default", // Include org_id, default to 'default'
+            created_at: item.created_at?.S || null,
           };
         });
       }

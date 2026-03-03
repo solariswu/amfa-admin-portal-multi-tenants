@@ -863,16 +863,68 @@ export class SSOApiGateway {
       );
     }
 
-    // Add permissions for tenants Lambda to delete TA_ group from admin userpool
+    // Add permissions for tenants Lambda (hard delete support)
     if (lambdaName === "tenants") {
+      // Cognito: DeleteGroup + DescribeUserPool + DeleteUserPoolDomain
       lambda.role?.attachInlinePolicy(
         new Policy(this.scope, `${lambdaName}-cognito-policy`, {
           statements: [
             new PolicyStatement({
               resources: [
-                `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/${this.adminUserPoolId}`,
+                `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/*`,
               ],
-              actions: ["cognito-idp:DeleteGroup"],
+              actions: [
+                "cognito-idp:DeleteGroup",
+                "cognito-idp:DescribeUserPool",
+                "cognito-idp:DeleteUserPoolDomain",
+              ],
+            }),
+          ],
+        }),
+      );
+
+      // DynamoDB: DeleteTable + DescribeTable for per-tenant tables
+      lambda.role?.attachInlinePolicy(
+        new Policy(this.scope, `${lambdaName}-ddb-cleanup-policy`, {
+          statements: [
+            new PolicyStatement({
+              resources: [
+                `arn:aws:dynamodb:${this.region}:${this.account}:table/amfa-*`,
+              ],
+              actions: [
+                "dynamodb:DeleteTable",
+                "dynamodb:DescribeTable",
+                "dynamodb:DeleteItem",
+              ],
+            }),
+          ],
+        }),
+      );
+
+      // S3: DeleteObject for config files in both SP Portal and AMFA Service buckets
+      lambda.role?.attachInlinePolicy(
+        new Policy(this.scope, `${lambdaName}-s3-cleanup-policy`, {
+          statements: [
+            new PolicyStatement({
+              resources: [
+                "arn:aws:s3:::sp-portal-shared-*/*",
+                "arn:aws:s3:::amfa-service-shared-*/*",
+              ],
+              actions: ["s3:DeleteObject"],
+            }),
+          ],
+        }),
+      );
+
+      // Secrets Manager: DeleteSecret for per-tenant secrets
+      lambda.role?.attachInlinePolicy(
+        new Policy(this.scope, `${lambdaName}-secrets-cleanup-policy`, {
+          statements: [
+            new PolicyStatement({
+              resources: [
+                `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/*`,
+              ],
+              actions: ["secretsmanager:DeleteSecret"],
             }),
           ],
         }),

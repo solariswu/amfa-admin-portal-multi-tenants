@@ -190,7 +190,7 @@ export const OrgAdminList = ({ orgId }) => {
       <CardContent>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
           <Typography variant="h5" gutterBottom>
-            Organization Administrators
+            IT Svc Org Administrators
           </Typography>
           {canManage && (
             <Button
@@ -213,7 +213,7 @@ export const OrgAdminList = ({ orgId }) => {
           <Alert severity="error">Failed to load administrators</Alert>
         ) : !admins || admins.length === 0 ? (
           <Typography color="text.secondary" sx={{ py: 2 }}>
-            No SPA administrators found for this organization.
+            No SPA administrators found for this IT Svc Org.
           </Typography>
         ) : (
           <TableContainer>
@@ -296,7 +296,7 @@ export const OrgAdminList = ({ orgId }) => {
           <DialogTitle>Change to Tenant Admin</DialogTitle>
           <DialogContent>
             <Typography variant="body2" sx={{ mb: 2 }}>
-              Change <strong>{selectedAdmin?.email}</strong> from Organization Admin
+              Change <strong>{selectedAdmin?.email}</strong> from IT Svc Org Admin
               (SPA) to Tenant Admin (TA). Select the tenant to assign:
             </Typography>
             <FormControl fullWidth sx={{ mt: 1 }}>
@@ -315,7 +315,7 @@ export const OrgAdminList = ({ orgId }) => {
             </FormControl>
             {tenants?.length === 0 && (
               <Alert severity="warning" sx={{ mt: 2 }}>
-                No tenants found in this organization. Create a tenant first.
+                No tenants found in this IT Svc Org. Create a tenant first.
               </Alert>
             )}
           </DialogContent>

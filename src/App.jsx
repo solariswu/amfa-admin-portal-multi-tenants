@@ -51,7 +51,21 @@ const theme = {
 };
 
 const messages = {
-  en: englishMessages
+  en: {
+    ...englishMessages,
+    resources: {
+      organizations: {
+        name: 'IT Svc Org |||| IT Svc Orgs',
+        fields: {
+          id: 'IT Svc Org ID',
+          name: 'Name',
+          description: 'Description',
+          created_by: 'Created By',
+          created_at: 'Created At',
+        },
+      },
+    },
+  },
 };
 
 const i18nProvider = polyglotI18nProvider(locale => messages[locale], "en", {
@@ -76,8 +90,8 @@ export const App = () => (
         <Resource options={{ label: 'User Import' }} name="importusers" {...importuser} />
         <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />
         <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
-        <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} />
-        <Resource options={{ label: 'Organizations' }} name="organizations" {...organizations} />
+        {/* <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} /> */}
+        <Resource name="organizations" {...organizations} />
         <Resource options={{ label: 'Tenants' }} name="tenants" {...tenants} />
         <Resource options={{ label: 'Brandings' }} name="brandings" {...brandings} />
         <Resource options={{ label: 'Admin' }} name="admins" {...admins} />

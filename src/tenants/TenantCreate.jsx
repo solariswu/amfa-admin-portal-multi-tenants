@@ -115,11 +115,13 @@ export const TenantCreate = () => {
   };
 
   const onSuccess = (data) => {
-    notify(`Tenant "${data.name || data.id}" created successfully!`, { 
+    const tenantName = data.data?.tenantName || data.tenantName || data.name || data.id;
+    const tenantId = data.data?.id || data.id;
+    notify(`Tenant "${tenantName}" created successfully!`, { 
       type: 'success',
       multiLine: true 
     });
-    redirect('show', 'tenants', data.id);
+    redirect('show', 'tenants', tenantId);
   };
 
   const onError = (error) => {
@@ -142,7 +144,7 @@ export const TenantCreate = () => {
     } else if (statusCode === 403) {
       // HTTP 403 Forbidden - Permission denied
       notify(
-        `Permission denied: You don't have permission to create tenants in this organization.`, 
+        `Permission denied: You don't have permission to create tenants in this IT Svc Org.`, 
         { 
           type: 'error',
           multiLine: true,
@@ -198,8 +200,8 @@ export const TenantCreate = () => {
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={3}>
           {roleInfo.role === 'SA' 
-            ? 'Create a new tenant for any organization' 
-            : `Create a new tenant for your organization (${roleInfo.orgId})`
+            ? 'Create a new tenant for any IT Svc Org' 
+            : `Create a new tenant for your IT Svc Org (${roleInfo.orgId})`
           }
         </Typography>
 
@@ -236,28 +238,28 @@ export const TenantCreate = () => {
                   />
                 </Grid>
 
-                {/* Organization - Different for SA vs SPA */}
+                {/* IT Svc Org - Different for SA vs SPA */}
                 <Grid item xs={12} sm={6}>
                   {roleInfo.role === 'SA' ? (
                     <SelectInput
                       source="orgId"
-                      label="Organization"
+                      label="IT Svc Org"
                       choices={orgs?.map(org => ({ 
                         id: org.id, 
                         name: org.name || org.id 
                       })) || []}
                       validate={required()}
-                      helperText="Select the organization for this tenant"
+                      helperText="Select the IT Svc Org for this tenant"
                       fullWidth
                       isLoading={orgsLoading}
                     />
                   ) : (
                     <TextInput
                       source="orgId"
-                      label="Organization"
+                      label="IT Svc Org"
                       defaultValue={roleInfo.orgId}
                       disabled
-                      helperText="Your organization (cannot be changed)"
+                      helperText="Your IT Svc Org (cannot be changed)"
                       fullWidth
                     />
                   )}

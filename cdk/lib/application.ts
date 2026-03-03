@@ -192,6 +192,7 @@ export class AppStack extends Stack {
           "arn:aws:s3:::*-login/*",
           "arn:aws:s3:::*-portal/*",
           "arn:aws:s3:::sp-portal-shared-*/*", // Shared SP portal bucket
+          "arn:aws:s3:::amfa-service-shared-*/*", // Shared AMFA service bucket
         ],
       }),
     );
@@ -203,6 +204,7 @@ export class AppStack extends Stack {
           "arn:aws:s3:::*-login",
           "arn:aws:s3:::*-portal",
           "arn:aws:s3:::sp-portal-shared-*", // Shared SP portal bucket
+          "arn:aws:s3:::amfa-service-shared-*", // Shared AMFA service bucket
         ],
       }),
     );

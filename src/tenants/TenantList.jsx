@@ -78,10 +78,10 @@ const TenantFiltersSA = [
 	<ReferenceInput 
 		source="org_id" 
 		reference="organizations"
-		label="Organization"
+		label="IT Svc Org"
 		alwaysOn
 	>
-		<SelectInput optionText="name" label="Organization" />
+		<SelectInput optionText="name" label="IT Svc Org" />
 	</ReferenceInput>
 ];
 
@@ -119,7 +119,7 @@ export const TenantList = props => {
 					<TextField label="Tenant Name" source="name" sortable={true} />
 					<TextField label="Tenant Id" source="id" sortable={true} />
 					<FunctionField 
-						label="Organization" 
+						label="IT Svc Org"
 						render={record => {
 							const orgName = orgMap[record.org_id] || record.org_id || 'N/A';
 							return record.org_id ? (

@@ -110,7 +110,7 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
       },
       {
         onSuccess: () => {
-          notify('Admin role changed to Organization Admin (SPA) successfully', { type: 'success' });
+          notify('Admin role changed to IT Svc Org Admin (SPA) successfully', { type: 'success' });
           setChangeDialogOpen(false);
           setSelectedAdmin(null);
           refresh();
@@ -283,16 +283,16 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
           maxWidth="sm"
           fullWidth
         >
-          <DialogTitle>Change to Organization Admin</DialogTitle>
+          <DialogTitle>Change to IT Svc Org Admin</DialogTitle>
           <DialogContent>
             <Typography variant="body2" sx={{ mb: 2 }}>
               Change <strong>{selectedAdmin?.email}</strong> from Tenant Admin
-              (TA) to Organization Admin (SPA) for organization <strong>{orgId}</strong>?
+              (TA) to IT Svc Org Admin (SPA) for IT Svc Org <strong>{orgId}</strong>?
             </Typography>
             <Alert severity="info" sx={{ mt: 1 }}>
               This will remove the TA role for tenant <strong>{tenantId}</strong> and 
-              assign the SPA role for organization <strong>{orgId}</strong>.
-              The user will gain access to all tenants within this organization.
+              assign the SPA role for IT Svc Org <strong>{orgId}</strong>.
+              The user will gain access to all tenants within this IT Svc Org.
             </Alert>
           </DialogContent>
           <DialogActions>

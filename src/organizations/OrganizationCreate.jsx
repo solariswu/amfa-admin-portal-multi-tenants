@@ -22,10 +22,10 @@ import { canCreateOrganizations } from '../utils/roleUtils';
  */
 const validateOrgId = (value) => {
   if (!value) {
-    return 'Organization ID is required';
+    return 'IT Svc Org ID is required';
   }
   if (!/^[a-z0-9-_]{2,50}$/.test(value)) {
-    return 'Organization ID must be lowercase alphanumeric, dash, or underscore (2-50 chars)';
+    return 'IT Svc Org ID must be lowercase alphanumeric, dash, or underscore (2-50 chars)';
   }
   return undefined;
 };
@@ -35,10 +35,10 @@ const validateOrgId = (value) => {
  */
 const validateOrgName = (value) => {
   if (!value) {
-    return 'Organization name is required';
+    return 'IT Svc Org name is required';
   }
   if (value.length < 2 || value.length > 100) {
-    return 'Organization name must be 2-100 characters';
+    return 'IT Svc Org name must be 2-100 characters';
   }
   return undefined;
 };
@@ -75,7 +75,7 @@ export const OrganizationCreate = () => {
         <Alert severity="error">
           <Typography variant="h6">Insufficient Permissions</Typography>
           <Typography variant="body2">
-            Only Super Admins can create organizations.
+            Only Super Admins can create IT Svc Orgs.
           </Typography>
         </Alert>
       </Box>
@@ -83,21 +83,21 @@ export const OrganizationCreate = () => {
   }
 
   const onSuccess = (data) => {
-    notify(`Organization "${data.name}" created successfully!`, {
+    notify(`IT Svc Org "${data.name}" created successfully!`, {
       type: 'success',
     });
     redirect('show', 'organizations', data.id);
   };
 
   const onError = (error) => {
-    notify(`Failed to create organization: ${error.message}`, {
+    notify(`Failed to create IT Svc Org: ${error.message}`, {
       type: 'error',
     });
   };
 
   return (
     <Create
-      title="Create New Organization"
+      title="Create New IT Svc Org"
       redirect="show"
       mutationOptions={{ onSuccess, onError }}
     >
@@ -106,16 +106,16 @@ export const OrganizationCreate = () => {
           <BusinessIcon fontSize="large" />
         </Avatar>
         <Typography component="h1" variant="h4" mb={1}>
-          Create New Organization
+          Create New IT Svc Org
         </Typography>
         <Typography variant="body2" color="text.secondary" mb={3}>
-          Create a new organization to group tenants
+          Create a new IT Svc Org to group tenants
         </Typography>
 
         <SimpleForm sx={{ maxWidth: 600, width: '100%' }}>
           <TextInput
             source="id"
-            label="Organization ID"
+            label="IT Svc Org ID"
             validate={[required(), validateOrgId]}
             helperText="Unique ID (e.g., 'acme', 'contoso'). Lowercase, alphanumeric, dash, or underscore only."
             fullWidth
@@ -126,9 +126,9 @@ export const OrganizationCreate = () => {
 
           <TextInput
             source="name"
-            label="Organization Name"
+            label="IT Svc Org Name"
             validate={[required(), validateOrgName]}
-            helperText="Display name for the organization (2-100 characters)"
+            helperText="Display name for the IT Svc Org (2-100 characters)"
             fullWidth
           />
 
@@ -137,14 +137,14 @@ export const OrganizationCreate = () => {
             label="Description"
             multiline
             rows={4}
-            helperText="Optional description of the organization"
+            helperText="Optional description of the IT Svc Org"
             fullWidth
           />
 
           <Box mt={2}>
             <Alert severity="info">
               <Typography variant="body2">
-                <strong>Note:</strong> Organization IDs cannot be changed after
+                <strong>Note:</strong> IT Svc Org IDs cannot be changed after
                 creation. Choose carefully.
               </Typography>
             </Alert>

@@ -16,7 +16,7 @@ const OrganizationEdit = () => {
     return (
       <Box p={2}>
         <Typography color="error">
-          Only Super Admins can edit organizations.
+          Only Super Admins can edit IT Svc Orgs.
         </Typography>
       </Box>
     );
@@ -26,15 +26,15 @@ const OrganizationEdit = () => {
     <Edit mutationMode="pessimistic">
       <SimpleForm>
         <Typography variant="h6" gutterBottom>
-          Edit Organization
+          Edit IT Svc Org
         </Typography>
         
         <TextInput 
           source="id" 
-          label="Organization ID" 
+          label="IT Svc Org ID" 
           disabled
           fullWidth
-          helperText="Organization ID cannot be changed"
+          helperText="IT Svc Org ID cannot be changed"
         />
         
         <TextInput 
@@ -53,7 +53,7 @@ const OrganizationEdit = () => {
         />
 
         <Typography variant="caption" color="textSecondary" sx={{ mt: 2 }}>
-          Note: Changing organization details will not affect existing tenants or their configurations.
+          Note: Changing IT Svc Org details will not affect existing tenants or their configurations.
         </Typography>
       </SimpleForm>
     </Edit>

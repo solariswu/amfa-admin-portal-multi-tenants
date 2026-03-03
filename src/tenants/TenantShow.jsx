@@ -34,7 +34,7 @@ const ShowActions = () => {
       {canDelete && record?.id && (
         <DeleteWithConfirmButton
           confirmTitle={`Delete Tenant "${record?.name}"?`}
-          confirmContent="This will disable the tenant. Resources will be preserved."
+          confirmContent="This will delete the tenant and all resources except tenant userpool."
           mutationMode="pessimistic"
           redirect="list"
         />
@@ -77,7 +77,7 @@ export const TenantShow = () => {
               <TextField source="name" label="Tenant Name" />
               <TextField source="contact" label="Contact Email" />
               <FunctionField
-                label="Organization"
+                label="IT Svc Org"
                 render={record => {
                   const orgName = orgMap[record.org_id] || record.org_id || 'N/A';
                   return record.org_id ? (

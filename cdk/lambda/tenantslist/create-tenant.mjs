@@ -145,28 +145,32 @@ export async function createTenant(data, requesterRole, requesterOrgId, requeste
     );
   }
 
-  // 6. Create admin user (mandatory for both SA and SPA)
-  if (
-    data.adminEmail &&
-    provisionedTenant.userPoolId
-  ) {
+  // 6. Create admin user in ADMIN userpool (not tenant userpool)
+  // The TA_<tenantId> group was already created in step 5.
+  // The TenantAdminList UI queries the admins resource (admin userpool) for TA_ group members.
+  if (data.adminEmail && adminUserPoolId) {
     try {
-      console.log("Creating tenant admin user:", data.adminEmail);
+      console.log("Creating tenant admin user in admin userpool:", data.adminEmail);
 
       await createAdminUser(
-        provisionedTenant.userPoolId,
+        adminUserPoolId, // Use admin userpool so user appears in TenantAdminList
         data.adminEmail,
         data.adminFirstName || "",
         data.adminLastName || "",
         data.tenantId,
       );
 
-      console.log(`Tenant admin user created successfully: ${data.adminEmail}`);
+      console.log(`Tenant admin user created successfully in admin userpool: ${data.adminEmail}`);
     } catch (error) {
       console.error("Failed to create admin user (non-fatal):", error);
       // Don't fail the whole operation - tenant was created successfully
       // Just log the error
     }
+  } else {
+    console.warn("Skipping admin user creation:", {
+      hasAdminEmail: !!data.adminEmail,
+      hasAdminUserPoolId: !!adminUserPoolId,
+    });
   }
 
   return provisionedTenant;

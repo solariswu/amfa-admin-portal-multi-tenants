@@ -41,11 +41,11 @@ const lambda = new LambdaClient({
 const AMFA_IDP_NAME = "apersona";
 
 /**
- * Compute deterministic domain hash from root domain.
- * Matches the CDK userpool.ts hash algorithm exactly.
+ * Compute deterministic domain hash from input string.
+ * Uses Java-style String.hashCode() algorithm, converted to base-36.
  */
-function getDomainHash(rootDomain) {
-  const str = (rootDomain || "").replace(/\./g, "").toLowerCase();
+function getDomainHash(input) {
+  const str = (input || "").replace(/\./g, "").replace(/_/g, "").toLowerCase();
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
@@ -254,7 +254,7 @@ async function createUserPool(tenantId, tenantName) {
  * Matches CDK userpool.ts addHostedUIDomain() hash algorithm
  */
 async function createUserPoolDomain(userPoolId, tenantId, rootDomain) {
-  const hash = getDomainHash(rootDomain);
+  const hash = getDomainHash(userPoolId);
   const domainName = `${tenantId}-${hash}`;
 
   const command = new CreateUserPoolDomainCommand({

@@ -40,8 +40,8 @@ const ShowActions = () => {
     <TopToolbar>
       {permissions?.isSA && record?.id && !hasTenants && (
         <DeleteWithConfirmButton
-          confirmTitle={`Delete Organization "${record?.name}"?`}
-          confirmContent="This action cannot be undone. The organization and its associated SPA group will be permanently removed."
+          confirmTitle={`Delete IT Svc Org "${record?.name}"?`}
+          confirmContent="This action cannot be undone. The IT Svc Org and its associated SPA group will be permanently removed."
           redirect="list"
         />
       )}
@@ -61,12 +61,12 @@ export const OrganizationShow = () => {
         <Card>
           <CardContent>
             <Typography variant="h5" gutterBottom>
-              Organization Details
+              IT Svc Org Details
             </Typography>
             <Divider sx={{ my: 2 }} />
 
             <SimpleShowLayout>
-              <TextField source="id" label="Organization ID" />
+              <TextField source="id" label="IT Svc Org ID" />
               <TextField source="name" label="Name" />
               <TextField
                 source="description"
@@ -109,7 +109,7 @@ const TenantListCard = () => {
       <CardContent>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
           <Typography variant="h5" gutterBottom>
-            Tenants in this Organization
+            Tenants in this IT Svc Org
           </Typography>
           {(permissions?.isSA || (permissions?.isSPA && permissions?.orgId === record?.id)) && record?.id && (
             <Button
@@ -146,7 +146,7 @@ const TenantDatagridOrEmpty = () => {
       bulkActionButtons={false}
       empty={
         <Typography color="text.secondary" sx={{ py: 2 }}>
-          No tenants found for this organization.
+          No tenants found for this IT Svc Org.
         </Typography>
       }
       sx={{

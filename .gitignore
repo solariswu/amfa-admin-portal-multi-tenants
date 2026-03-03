@@ -31,3 +31,5 @@ cdk/config/*.js
 # Lambda build artifacts
 cdk/lambda/*/dist/
 cdk/lambda/*/node_modules/
+cdk.context.json
+ns_record.json

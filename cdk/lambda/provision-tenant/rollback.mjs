@@ -1,9 +1,9 @@
 /**
  * Rollback Module
- * 
+ *
  * Handles cleanup of partially provisioned resources when tenant provisioning fails.
  * Ensures no orphaned resources are left behind.
- * 
+ *
  * Rollback order (reverse of provisioning):
  * 1. Delete from DynamoDB
  * 2. Delete config files from S3
@@ -12,38 +12,40 @@
  * 5. Keep ASM registration (can be reused)
  */
 
-import { 
-  CognitoIdentityProviderClient, 
+import {
+  CognitoIdentityProviderClient,
   DeleteUserPoolCommand,
   DeleteUserPoolDomainCommand,
-  DescribeUserPoolCommand
-} from '@aws-sdk/client-cognito-identity-provider';
-import { deleteTenantFromDynamoDB } from './dynamodb-operations.mjs';
-import { deleteConfigFiles } from './config-generator.mjs';
+  DescribeUserPoolCommand,
+} from "@aws-sdk/client-cognito-identity-provider";
+import { deleteTenantFromDynamoDB } from "./dynamodb-operations.mjs";
+import { deleteConfigFiles } from "./config-generator.mjs";
 
-const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION });
+const cognito = new CognitoIdentityProviderClient({
+  region: process.env.AWS_REGION,
+});
 
 /**
  * Perform complete rollback of tenant provisioning
- * 
+ *
  * @param {Array} provisioningLog - Log of completed provisioning steps
  * @returns {Promise<void>}
  */
 export async function rollbackProvisioning(provisioningLog) {
-  console.log('='.repeat(60));
-  console.log('[ROLLBACK] Starting cleanup of provisioned resources');
-  console.log('='.repeat(60));
-  
+  console.log("=".repeat(60));
+  console.log("[ROLLBACK] Starting cleanup of provisioned resources");
+  console.log("=".repeat(60));
+
   if (!provisioningLog || provisioningLog.length === 0) {
-    console.log('[ROLLBACK] No resources to clean up');
+    console.log("[ROLLBACK] No resources to clean up");
     return;
   }
-  
+
   // Process in reverse order (LIFO - Last In, First Out)
   const rollbackSteps = [...provisioningLog].reverse();
   let successCount = 0;
   let failCount = 0;
-  
+
   for (const step of rollbackSteps) {
     try {
       await rollbackStep(step);
@@ -51,14 +53,19 @@ export async function rollbackProvisioning(provisioningLog) {
       console.log(`[ROLLBACK] ✓ Successfully rolled back: ${step.step}`);
     } catch (error) {
       failCount++;
-      console.error(`[ROLLBACK] ✗ Failed to rollback ${step.step}:`, error.message);
+      console.error(
+        `[ROLLBACK] ✗ Failed to rollback ${step.step}:`,
+        error.message,
+      );
       // Continue with other rollbacks - don't let one failure stop others
     }
   }
-  
-  console.log('='.repeat(60));
-  console.log(`[ROLLBACK] Cleanup complete: ${successCount} successful, ${failCount} failed`);
-  console.log('='.repeat(60));
+
+  console.log("=".repeat(60));
+  console.log(
+    `[ROLLBACK] Cleanup complete: ${successCount} successful, ${failCount} failed`,
+  );
+  console.log("=".repeat(60));
 }
 
 /**
@@ -66,30 +73,30 @@ export async function rollbackProvisioning(provisioningLog) {
  */
 async function rollbackStep(step) {
   const { step: stepName, data } = step;
-  
+
   console.log(`[ROLLBACK] Processing: ${stepName}`);
-  
+
   switch (stepName) {
-    case 'dynamodb':
+    case "dynamodb":
       await rollbackDynamoDB(data);
       break;
-      
-    case 'config':
+
+    case "config":
       await rollbackConfigFiles(data);
       break;
-      
-    case 'tables':
+
+    case "tables":
       await rollbackTables(data);
       break;
-      
-    case 'cognito':
+
+    case "cognito":
       await rollbackCognito(data);
       break;
-      
-    case 'asm':
+
+    case "asm":
       await rollbackASM(data);
       break;
-      
+
     default:
       console.warn(`[ROLLBACK] Unknown step type: ${stepName}, skipping`);
   }
@@ -100,12 +107,12 @@ async function rollbackStep(step) {
  */
 async function rollbackDynamoDB(data) {
   const tenantId = data?.tenantId || data?.id;
-  
+
   if (!tenantId) {
-    console.warn('[ROLLBACK] No tenant ID provided for DynamoDB rollback');
+    console.warn("[ROLLBACK] No tenant ID provided for DynamoDB rollback");
     return;
   }
-  
+
   console.log(`[ROLLBACK] Deleting tenant ${tenantId} from DynamoDB`);
   await deleteTenantFromDynamoDB(tenantId);
 }
@@ -115,12 +122,12 @@ async function rollbackDynamoDB(data) {
  */
 async function rollbackConfigFiles(data) {
   const tenantId = data?.tenantId;
-  
+
   if (!tenantId) {
-    console.warn('[ROLLBACK] No tenant ID provided for config files rollback');
+    console.warn("[ROLLBACK] No tenant ID provided for config files rollback");
     return;
   }
-  
+
   console.log(`[ROLLBACK] Deleting config files for tenant ${tenantId}`);
   await deleteConfigFiles(tenantId);
 }
@@ -131,21 +138,23 @@ async function rollbackConfigFiles(data) {
 async function rollbackTables(data) {
   // Extract tenant ID from table names
   const authCodeTable = data?.authCodeTable;
-  
+
   if (!authCodeTable) {
-    console.warn('[ROLLBACK] No table names provided for tables rollback');
+    console.warn("[ROLLBACK] No table names provided for tables rollback");
     return;
   }
-  
+
   // Extract tenantId from table name: amfa-authcode-{tenantId}
-  const tenantId = authCodeTable.replace('amfa-authcode-', '');
-  
+  const tenantId = authCodeTable.replace("amfa-authcode-", "");
+
   console.log(`[ROLLBACK] Deleting per-tenant tables for tenant ${tenantId}`);
-  
+
   try {
-    const { deleteTenantTables } = await import('./table-provisioning.mjs');
+    const { deleteTenantTables } = await import("./table-provisioning.mjs");
     await deleteTenantTables(tenantId);
-    console.log(`[ROLLBACK] Successfully deleted tables for tenant ${tenantId}`);
+    console.log(
+      `[ROLLBACK] Successfully deleted tables for tenant ${tenantId}`,
+    );
   } catch (error) {
     console.error(`[ROLLBACK] Error deleting tables:`, error.message);
     // Don't throw - continue with other rollback steps
@@ -159,80 +168,89 @@ async function rollbackTables(data) {
 async function rollbackCognito(data) {
   const userPoolId = data?.userPoolId;
   const oauthDomain = data?.oauthDomain;
-  
+
   if (!userPoolId) {
-    console.warn('[ROLLBACK] No UserPool ID provided for Cognito rollback');
+    console.warn("[ROLLBACK] No UserPool ID provided for Cognito rollback");
     return;
   }
-  
+
   console.log(`[ROLLBACK] Deleting Cognito UserPool: ${userPoolId}`);
-  
+
   try {
     // STEP 1: Delete the domain first (if it exists)
     if (oauthDomain) {
       console.log(`[ROLLBACK] Deleting Cognito domain: ${oauthDomain}`);
-      
+
       try {
         const deleteDomainCommand = new DeleteUserPoolDomainCommand({
           Domain: oauthDomain,
-          UserPoolId: userPoolId
+          UserPoolId: userPoolId,
         });
-        
+
         await cognito.send(deleteDomainCommand);
         console.log(`[ROLLBACK] Successfully deleted domain ${oauthDomain}`);
-        
+
         // Wait a moment for domain deletion to propagate
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       } catch (domainError) {
-        if (domainError.name === 'ResourceNotFoundException') {
-          console.log(`[ROLLBACK] Domain ${oauthDomain} already deleted or doesn't exist`);
+        if (domainError.name === "ResourceNotFoundException") {
+          console.log(
+            `[ROLLBACK] Domain ${oauthDomain} already deleted or doesn't exist`,
+          );
         } else {
-          console.warn(`[ROLLBACK] Failed to delete domain, but continuing:`, domainError.message);
+          console.warn(
+            `[ROLLBACK] Failed to delete domain, but continuing:`,
+            domainError.message,
+          );
         }
       }
     }
-    
+
     // STEP 2: Delete the UserPool (this cascades to delete clients)
     const deletePoolCommand = new DeleteUserPoolCommand({
-      UserPoolId: userPoolId
+      UserPoolId: userPoolId,
     });
-    
+
     await cognito.send(deletePoolCommand);
     console.log(`[ROLLBACK] Successfully deleted UserPool ${userPoolId}`);
-    
   } catch (error) {
-    if (error.name === 'ResourceNotFoundException') {
-      console.log(`[ROLLBACK] UserPool ${userPoolId} already deleted or doesn't exist`);
+    if (error.name === "ResourceNotFoundException") {
+      console.log(
+        `[ROLLBACK] UserPool ${userPoolId} already deleted or doesn't exist`,
+      );
       return;
     }
-    
+
     // If still failing due to domain, try to get and delete it
-    if (error.message && error.message.includes('domain')) {
+    if (error.message && error.message.includes("domain")) {
       console.log(`[ROLLBACK] Retrying after domain issue...`);
-      
+
       try {
         // Describe UserPool to get domain info
         const describeCommand = new DescribeUserPoolCommand({
-          UserPoolId: userPoolId
+          UserPoolId: userPoolId,
         });
-        
+
         const poolInfo = await cognito.send(describeCommand);
         const domain = poolInfo.UserPool?.Domain;
-        
+
         if (domain) {
           console.log(`[ROLLBACK] Found domain ${domain}, deleting it`);
           const deleteDomainCommand = new DeleteUserPoolDomainCommand({
             Domain: domain,
-            UserPoolId: userPoolId
+            UserPoolId: userPoolId,
           });
-          
+
           await cognito.send(deleteDomainCommand);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
           // Retry UserPool deletion
-          await cognito.send(new DeleteUserPoolCommand({ UserPoolId: userPoolId }));
-          console.log(`[ROLLBACK] Successfully deleted UserPool ${userPoolId} after domain cleanup`);
+          await cognito.send(
+            new DeleteUserPoolCommand({ UserPoolId: userPoolId }),
+          );
+          console.log(
+            `[ROLLBACK] Successfully deleted UserPool ${userPoolId} after domain cleanup`,
+          );
         }
       } catch (retryError) {
         console.error(`[ROLLBACK] Retry failed:`, retryError.message);
@@ -246,7 +264,7 @@ async function rollbackCognito(data) {
 
 /**
  * Rollback ASM registration
- * 
+ *
  * Note: We DON'T delete ASM registration because:
  * 1. It can be reused for the same tenant
  * 2. ASM portal doesn't provide a delete API
@@ -254,14 +272,16 @@ async function rollbackCognito(data) {
  */
 async function rollbackASM(data) {
   const tenantId = data?.tenantId;
-  
+
   if (!tenantId) {
-    console.warn('[ROLLBACK] No tenant ID provided for ASM rollback');
+    console.warn("[ROLLBACK] No tenant ID provided for ASM rollback");
     return;
   }
-  
-  console.log(`[ROLLBACK] Keeping ASM registration for tenant ${tenantId} (can be reused)`);
-  
+
+  console.log(
+    `[ROLLBACK] Keeping ASM registration for tenant ${tenantId} (can be reused)`,
+  );
+
   // ASM registration is kept in Secrets Manager
   // It will be reused if the same tenant is provisioned again
   // This is intentional - no action needed
@@ -269,45 +289,47 @@ async function rollbackASM(data) {
 
 /**
  * Validate rollback completion
- * 
+ *
  * @param {string} tenantId - Tenant ID to validate
  * @returns {Promise<Object>} Validation results
  */
 export async function validateRollback(tenantId) {
   console.log(`[ROLLBACK] Validating cleanup for tenant: ${tenantId}`);
-  
+
   const results = {
     tenantId,
     complete: true,
     checks: {
       dynamodb: { cleaned: false, error: null },
       configFiles: { cleaned: false, error: null },
-      cognito: { cleaned: false, error: null }
-    }
+      cognito: { cleaned: false, error: null },
+    },
   };
-  
+
   // Check DynamoDB
   try {
-    const { checkTenantExists } = await import('./dynamodb-operations.mjs');
+    const { checkTenantExists } = await import("./dynamodb-operations.mjs");
     const exists = await checkTenantExists(tenantId);
     results.checks.dynamodb.cleaned = !exists;
     if (exists) {
       results.complete = false;
-      results.checks.dynamodb.error = 'Tenant still exists in DynamoDB';
+      results.checks.dynamodb.error = "Tenant still exists in DynamoDB";
     }
   } catch (error) {
     results.checks.dynamodb.error = error.message;
     results.complete = false;
   }
-  
+
   // Check config files (would need S3 check - simplified here)
   results.checks.configFiles.cleaned = true; // Assume cleaned if no error
-  
+
   // Check Cognito (would need Cognito check - simplified here)
   results.checks.cognito.cleaned = true; // Assume cleaned if no error
-  
-  console.log(`[ROLLBACK] Validation complete: ${results.complete ? 'PASS' : 'FAIL'}`);
-  
+
+  console.log(
+    `[ROLLBACK] Validation complete: ${results.complete ? "PASS" : "FAIL"}`,
+  );
+
   return results;
 }
 
@@ -317,13 +339,13 @@ export async function validateRollback(tenantId) {
 export function createRollbackError(originalError, rollbackResults) {
   const error = new Error(
     `Tenant provisioning failed: ${originalError.message}. ` +
-    `Rollback ${rollbackResults.complete ? 'completed successfully' : 'partially completed'}.`
+      `Rollback ${rollbackResults.complete ? "completed successfully" : "partially completed"}.`,
   );
-  
+
   error.originalError = originalError;
   error.rollbackResults = rollbackResults;
   error.statusCode = originalError.statusCode || 500;
-  
+
   return error;
 }
 

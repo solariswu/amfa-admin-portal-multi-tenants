@@ -39,14 +39,14 @@ export const OrganizationList = (props) => {
     <Box sx={{ paddingTop: 5 }}>
       <List
         {...props}
-        title="Organizations"
+        title="IT Svc Orgs"
         perPage={25}
         actions={<ListActions />}
         exporter={false}
         sort={{ field: 'created_at', order: 'DESC' }}
       >
         <Datagrid rowClick="show" bulkActionButtons={false}>
-          <TextField source="id" label="Organization ID" sortable={true} />
+          <TextField source="id" label="IT Svc Org ID" sortable={true} />
           <TextField source="name" label="Name" sortable={true} />
           <FunctionField
             label="Description"

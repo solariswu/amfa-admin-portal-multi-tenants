@@ -1,62 +1,78 @@
 /**
  * Configuration Generator Module
- * 
+ *
  * Generates and uploads tenant-specific configuration files to shared S3 bucket:
  * - awsconfig_<tenantId>.json - AWS/Cognito configuration
  * - branding_<tenantId>.json - UI branding configuration
- * 
+ *
  * Also invalidates CloudFront cache for immediate availability.
  */
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  CloudFrontClient,
+  CreateInvalidationCommand,
+} from "@aws-sdk/client-cloudfront";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 const cloudfront = new CloudFrontClient({ region: process.env.AWS_REGION });
 
 /**
  * Generate and upload tenant configuration files
- * 
+ *
  * @param {Object} tenantData - Validated tenant data
  * @param {Object} cognitoResources - Cognito resource IDs
  * @returns {Object} URLs to uploaded configuration files
  */
 export async function generateAndUploadConfigs(tenantData, cognitoResources) {
   const { tenantId, tenantName } = tenantData;
-  
-  console.log(`[Config] Generating configuration files for tenant: ${tenantId}`);
-  
+
+  console.log(
+    `[Config] Generating configuration files for tenant: ${tenantId}`,
+  );
+
   // 1. Generate awsconfig.json
   const awsConfig = generateAWSConfig(tenantId, tenantName, cognitoResources);
   console.log(`[Config] Generated awsconfig for ${tenantId}`);
-  
+
   // 2. Generate branding.json with defaults
   const branding = generateBranding(tenantId, tenantName);
   console.log(`[Config] Generated branding for ${tenantId}`);
-  
-  // 3. Upload both files to S3
-  await uploadConfigToS3(tenantId, 'awsconfig', awsConfig);
-  console.log(`[Config] Uploaded awsconfig_${tenantId}.json to S3`);
-  
-  await uploadConfigToS3(tenantId, 'branding', branding);
-  console.log(`[Config] Uploaded branding_${tenantId}.json to S3`);
-  
-  // 4. Invalidate CloudFront cache
+
+  // 3. Upload config files to SP Portal S3 bucket
+  await uploadConfigToS3(tenantId, "awsconfig", awsConfig);
+  console.log(`[Config] Uploaded awsconfig_${tenantId}.json to SP Portal S3`);
+
+  await uploadConfigToS3(tenantId, "branding", branding);
+  console.log(`[Config] Uploaded branding_${tenantId}.json to SP Portal S3`);
+
+  // 3b. Generate AMFA service config and upload to AMFA service S3 bucket
+  const amfaServiceConfig = generateAmfaServiceConfig(
+    tenantId,
+    tenantName,
+    cognitoResources,
+  );
+  await uploadConfigToAmfaServiceS3(tenantId, amfaServiceConfig);
+  console.log(
+    `[Config] Uploaded awsconfig_${tenantId}.json to AMFA Service S3`,
+  );
+
+  // 4. Invalidate CloudFront caches (both SP Portal and AMFA Service)
   await invalidateCloudFrontCache(tenantId);
   console.log(`[Config] Invalidated CloudFront cache for ${tenantId}`);
-  
+
   // 5. Return URLs
   const rootDomain = process.env.ROOT_DOMAIN_NAME;
   return {
     awsConfig: `https://${tenantId}.login.${rootDomain}/awsconfig_${tenantId}.json`,
     branding: `https://${tenantId}.login.${rootDomain}/branding_${tenantId}.json`,
-    tenantUrl: `https://${tenantId}.login.${rootDomain}`
+    tenantUrl: `https://${tenantId}.login.${rootDomain}`,
   };
 }
 
 /**
  * Generate AWS configuration JSON
- * 
+ *
  * Field names must match what the SP Portal frontend expects:
  * - aws_project_region, aws_user_pools_id, aws_user_pools_web_client_id,
  *   aws_oauth_domain, apiUrl, amfa_service_domain
@@ -64,7 +80,7 @@ export async function generateAndUploadConfigs(tenantData, cognitoResources) {
 function generateAWSConfig(tenantId, tenantName, cognitoResources) {
   const rootDomain = process.env.ROOT_DOMAIN_NAME;
   const region = process.env.AWS_REGION;
-  
+
   return {
     aws_project_region: region,
     aws_user_pools_id: cognitoResources.userPoolId,
@@ -76,16 +92,16 @@ function generateAWSConfig(tenantId, tenantName, cognitoResources) {
     TenantName: tenantName,
     // Additional metadata
     _meta: {
-      version: '2.0',
+      version: "2.0",
       generatedAt: new Date().toISOString(),
-      architecture: 'multi-tenant-shared-infrastructure'
-    }
+      architecture: "multi-tenant-shared-infrastructure",
+    },
   };
 }
 
 /**
  * Generate branding configuration JSON with defaults from environment.
- * 
+ *
  * Field names must match what the SP Portal frontend expects
  * (App.jsx, LoginPage.jsx, ServiceProvidersList.jsx).
  */
@@ -95,32 +111,108 @@ function generateBranding(tenantId, tenantName) {
     name: tenantName,
 
     // App title and logo URLs
-    app_title_msg: tenantName || 'End User Portal',
-    app_login_logo_url: process.env.DEFAULT_LOGIN_LOGO || 'https://downloads.apersona.com/logos/logo-here_250x50.png',
-    fav_icon_url: process.env.DEFAULT_FAVICON || 'https://downloads.apersona.com/logos/favicon.png',
-    app_bar_logo_url: process.env.DEFAULT_BAR_LOGO || 'https://downloads.apersona.com/logos/logo-here_white_250x50.png',
-    app_terms_url: process.env.DEFAULT_TERMS_URL || 'https://www.apersona.com/licensing',
-    app_privacy_url: process.env.DEFAULT_PRIVACY_URL || 'https://www.apersona.com/privacy',
+    app_title_msg: tenantName || "End User Portal",
+    app_login_logo_url:
+      process.env.DEFAULT_LOGIN_LOGO ||
+      "https://downloads.apersona.com/logos/logo-here_250x50.png",
+    fav_icon_url:
+      process.env.DEFAULT_FAVICON ||
+      "https://downloads.apersona.com/logos/favicon.png",
+    app_bar_logo_url:
+      process.env.DEFAULT_BAR_LOGO ||
+      "https://downloads.apersona.com/logos/logo-here_white_250x50.png",
+    app_terms_url:
+      process.env.DEFAULT_TERMS_URL || "https://www.apersona.com/licensing",
+    app_privacy_url:
+      process.env.DEFAULT_PRIVACY_URL || "https://www.apersona.com/privacy",
 
     // Color scheme (matching frontend expectations)
-    login_page_center_color: process.env.DEFAULT_LOGIN_CENTER_COLOR || '#808080',
-    login_page_outter_color: process.env.DEFAULT_LOGIN_OUTER_COLOR || '#9B9B9B',
-    app_bar_start_color: process.env.DEFAULT_BAR_START_COLOR || '#083173',
-    app_bar_end_color: process.env.DEFAULT_BAR_END_COLOR || '#083173',
-    app_title_icon_color: process.env.DEFAULT_TITLE_ICON_COLOR || '#F9F9F9',
+    login_page_center_color:
+      process.env.DEFAULT_LOGIN_CENTER_COLOR || "#808080",
+    login_page_outter_color: process.env.DEFAULT_LOGIN_OUTER_COLOR || "#9B9B9B",
+    app_bar_start_color: process.env.DEFAULT_BAR_START_COLOR || "#083173",
+    app_bar_end_color: process.env.DEFAULT_BAR_END_COLOR || "#083173",
+    app_title_icon_color: process.env.DEFAULT_TITLE_ICON_COLOR || "#F9F9F9",
 
     // Portal content
-    portal_title_msg: process.env.DEFAULT_PORTAL_TITLE || 'Service Providers',
-    portal_description_msg: process.env.DEFAULT_PORTAL_DESC || 'All available single sign-on services are listed below. Remove any that you do not personally use.',
+    portal_title_msg: process.env.DEFAULT_PORTAL_TITLE || "Service Providers",
+    portal_description_msg:
+      process.env.DEFAULT_PORTAL_DESC ||
+      "All available single sign-on services are listed below. Remove any that you do not personally use.",
 
     // Additional metadata
     _meta: {
-      version: '2.0',
+      version: "2.0",
       generatedAt: new Date().toISOString(),
       tenantId: tenantId,
-      customizable: true
-    }
+      customizable: true,
+    },
   };
+}
+
+/**
+ * Generate AMFA Service configuration JSON
+ *
+ * This config is loaded by the AMFA Service UI (*.idapersona.*)
+ * and uses different field names than the SP Portal config.
+ * The AMFA service index.jsx uses recaptcha_key from this config.
+ */
+function generateAmfaServiceConfig(tenantId, tenantName, cognitoResources) {
+  const rootDomain = process.env.ROOT_DOMAIN_NAME;
+  const region = process.env.AWS_REGION;
+
+  return {
+    recaptcha_key: "", // Will be populated from tenant config if available
+    TenantId: tenantId,
+    TenantName: tenantName,
+    aws_project_region: region,
+    aws_user_pools_id: cognitoResources.userPoolId,
+    aws_user_pools_web_client_id: cognitoResources.spPortalClientId,
+    aws_oauth_domain: cognitoResources.oauthDomain,
+    apiUrl: `https://api.${rootDomain}`,
+    amfa_service_domain: `${tenantId}.idapersona.${rootDomain}`,
+    _meta: {
+      version: "2.0",
+      generatedAt: new Date().toISOString(),
+      architecture: "multi-tenant-shared-infrastructure",
+    },
+  };
+}
+
+/**
+ * Upload awsconfig to AMFA Service S3 bucket
+ * The AMFA Service bucket follows naming convention: amfa-service-shared-{account}-{region}
+ */
+async function uploadConfigToAmfaServiceS3(tenantId, configData) {
+  const accountId = process.env.ACCOUNT_ID;
+  const region = process.env.AWS_REGION;
+  const bucketName = `amfa-service-shared-${accountId}-${region}`;
+
+  const fileName = `awsconfig_${tenantId}.json`;
+
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: fileName,
+    Body: JSON.stringify(configData, null, 2),
+    ContentType: "application/json",
+    CacheControl: "public, max-age=300",
+    Metadata: {
+      "tenant-id": tenantId,
+      "config-type": "amfa-service-awsconfig",
+      "generated-at": new Date().toISOString(),
+    },
+  });
+
+  try {
+    await s3.send(command);
+  } catch (error) {
+    console.error(
+      `[Config] Failed to upload ${fileName} to AMFA Service S3:`,
+      error,
+    );
+    // Non-fatal: SP Portal config is the primary requirement
+    console.warn(`[Config] AMFA Service config upload failed, continuing...`);
+  }
 }
 
 /**
@@ -128,29 +220,30 @@ function generateBranding(tenantId, tenantName) {
  */
 async function uploadConfigToS3(tenantId, configType, configData) {
   const bucketName = process.env.SP_PORTAL_BUCKET;
-  
+
   if (!bucketName) {
-    throw new Error('SP_PORTAL_BUCKET environment variable is not set');
+    throw new Error("SP_PORTAL_BUCKET environment variable is not set");
   }
-  
+
   const fileName = `${configType}_${tenantId}.json`;
-  const cacheControl = configType === 'awsconfig' 
-    ? 'public, max-age=300' // 5 minutes for awsconfig
-    : 'public, max-age=3600'; // 1 hour for branding
-  
+  const cacheControl =
+    configType === "awsconfig"
+      ? "public, max-age=300" // 5 minutes for awsconfig
+      : "public, max-age=3600"; // 1 hour for branding
+
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: fileName,
     Body: JSON.stringify(configData, null, 2),
-    ContentType: 'application/json',
+    ContentType: "application/json",
     CacheControl: cacheControl,
     Metadata: {
-      'tenant-id': tenantId,
-      'config-type': configType,
-      'generated-at': new Date().toISOString()
-    }
+      "tenant-id": tenantId,
+      "config-type": configType,
+      "generated-at": new Date().toISOString(),
+    },
   });
-  
+
   try {
     await s3.send(command);
   } catch (error) {
@@ -164,33 +257,36 @@ async function uploadConfigToS3(tenantId, configType, configData) {
  */
 async function invalidateCloudFrontCache(tenantId) {
   const distributionId = process.env.CLOUDFRONT_DISTRIBUTION_ID;
-  
+
   if (!distributionId) {
-    console.warn('[Config] CLOUDFRONT_DISTRIBUTION_ID not set, skipping cache invalidation');
+    console.warn(
+      "[Config] CLOUDFRONT_DISTRIBUTION_ID not set, skipping cache invalidation",
+    );
     return;
   }
-  
+
   const command = new CreateInvalidationCommand({
     DistributionId: distributionId,
     InvalidationBatch: {
       CallerReference: `tenant-${tenantId}-${Date.now()}`,
       Paths: {
         Quantity: 2,
-        Items: [
-          `/awsconfig_${tenantId}.json`,
-          `/branding_${tenantId}.json`
-        ]
-      }
-    }
+        Items: [`/awsconfig_${tenantId}.json`, `/branding_${tenantId}.json`],
+      },
+    },
   });
-  
+
   try {
     const response = await cloudfront.send(command);
-    console.log(`[Config] CloudFront invalidation created: ${response.Invalidation.Id}`);
+    console.log(
+      `[Config] CloudFront invalidation created: ${response.Invalidation.Id}`,
+    );
   } catch (error) {
-    console.error('[Config] Failed to invalidate CloudFront cache:', error);
+    console.error("[Config] Failed to invalidate CloudFront cache:", error);
     // Don't fail provisioning if cache invalidation fails
-    console.warn('[Config] Continuing without cache invalidation - configs may take time to propagate');
+    console.warn(
+      "[Config] Continuing without cache invalidation - configs may take time to propagate",
+    );
   }
 }
 
@@ -199,35 +295,38 @@ async function invalidateCloudFrontCache(tenantId) {
  */
 export async function deleteConfigFiles(tenantId) {
   const bucketName = process.env.SP_PORTAL_BUCKET;
-  
+
   if (!bucketName) {
-    console.warn('[Config] SP_PORTAL_BUCKET not set, skipping config deletion');
+    console.warn("[Config] SP_PORTAL_BUCKET not set, skipping config deletion");
     return;
   }
-  
+
   console.log(`[Config] Deleting configuration files for tenant: ${tenantId}`);
-  
+
   // Import DeleteObjectCommand here to avoid loading it unless needed
-  const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
-  
+  const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+
   try {
     // Delete awsconfig
-    await s3.send(new DeleteObjectCommand({
-      Bucket: bucketName,
-      Key: `awsconfig_${tenantId}.json`
-    }));
-    
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: `awsconfig_${tenantId}.json`,
+      }),
+    );
+
     // Delete branding
-    await s3.send(new DeleteObjectCommand({
-      Bucket: bucketName,
-      Key: `branding_${tenantId}.json`
-    }));
-    
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: `branding_${tenantId}.json`,
+      }),
+    );
+
     console.log(`[Config] Deleted configuration files for ${tenantId}`);
-    
+
     // Invalidate cache for deleted files
     await invalidateCloudFrontCache(tenantId);
-    
   } catch (error) {
     console.error(`[Config] Error deleting config files:`, error);
     // Don't throw - this is cleanup, continue with other rollback steps
