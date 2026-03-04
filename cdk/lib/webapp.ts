@@ -18,7 +18,6 @@ import { AppStackProps } from "./application";
 
 export class WebApplication {
 	scope: Construct
-	name: string;
 	domainName: string;
 	certificate: Certificate;
 	hostedZoneId: string;
@@ -73,14 +72,14 @@ export class WebApplication {
 			},
 			errorResponses: [{
 				httpStatus: 403,
-				responseHttpStatus: 403,
+				responseHttpStatus: 200,
 				responsePagePath: '/index.html',
-				ttl: Duration.minutes(30),
+				ttl: Duration.minutes(5),
 			}, {
 				httpStatus: 404,
-				responseHttpStatus: 404,
+				responseHttpStatus: 200,
 				responsePagePath: '/index.html',
-				ttl: Duration.minutes(30),
+				ttl: Duration.minutes(5),
 			}],
 		});
 

@@ -86,15 +86,15 @@ export const App = () => (
         i18nProvider={i18nProvider}
         requireAuth={true}
       >
+        <Resource options={{ label: 'IT Svc Orgs' }} name="organizations" {...organizations} />
+        <Resource options={{ label: 'Tenants' }} name="tenants" {...tenants} />
         <Resource name="users" {...users} />
         <Resource options={{ label: 'User Import' }} name="importusers" {...importuser} />
         <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />
+        <Resource name="admins" {...admins} />
+        <Resource name="brandings" {...brandings} />
         <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
         {/* <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} /> */}
-        <Resource name="organizations" {...organizations} />
-        <Resource options={{ label: 'Tenants' }} name="tenants" {...tenants} />
-        <Resource options={{ label: 'Brandings' }} name="brandings" {...brandings} />
-        <Resource options={{ label: 'Admin' }} name="admins" {...admins} />
         {/* <CustomRoutes>
         <Route path="/user/import" element={<UserImport />} />
       </CustomRoutes> */}

@@ -44,7 +44,7 @@ export const AdminCreate = () => {
                 // Backend returns { data: { groups: [...] } }
                 const groups = data.data?.groups || [];
                 const choices = groups.map(g => ({ id: g, name: g }));
-                
+
                 console.log('Available group choices:', choices);
                 setGroupChoices(choices);
             } catch (err) {
@@ -59,8 +59,8 @@ export const AdminCreate = () => {
     }, []);
 
     const getHelpText = () => {
-        if (!permissions) return 'Select user groups';
-        
+        if (!permissions) return 'Select user Role';
+
         switch (permissions.roleType) {
             case 'SA':
                 return 'As Super Admin, you can assign any SPA or TA role';
@@ -69,7 +69,7 @@ export const AdminCreate = () => {
             case 'TA':
                 return `As Tenant Admin, you can only assign your own TA role(s)`;
             default:
-                return 'Select user groups';
+                return 'Select user Role';
         }
     };
 
@@ -153,7 +153,7 @@ export const AdminCreate = () => {
                                 </Typography>
                             ) : (
                                 <AutocompleteArrayInput
-                                    label="User Groups"
+                                    label="Admin Type"
                                     source="groups"
                                     choices={groupChoices}
                                     isRequired={true}

@@ -84,7 +84,7 @@ export const AdminEdit = () => {
   }, []);
 
   const getHelpText = () => {
-    if (!permissions) return 'Select user groups';
+    if (!permissions) return 'Select user Role';
     
     switch (permissions.roleType) {
       case 'SA':
@@ -94,7 +94,7 @@ export const AdminEdit = () => {
       case 'TA':
         return `As Tenant Admin, you can only assign your own TA role(s)`;
       default:
-        return 'Select user groups';
+        return 'Select user Role';
     }
   };
 
@@ -229,7 +229,7 @@ export const AdminEdit = () => {
                     </Typography>
                   ) : (
                     <AutocompleteArrayInput
-                      label="User Groups"
+                      label="User Role"
                       source="groups"
                       choices={groupChoices}
                       fullWidth

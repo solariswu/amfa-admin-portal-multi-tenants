@@ -8,7 +8,7 @@ import {
   FunctionField,
 } from "react-admin";
 import { ChevronLeft, ChevronRight } from "@mui/icons-material";
-import { Box } from "@mui/material";
+import { Box, Chip } from "@mui/material";
 
 const resource = "Branding";
 const Pagination = () => {
@@ -56,13 +56,30 @@ export const BrandingList = (props) => {
     <Box sx={{ paddingTop: 5 }}>
       <List
         {...props}
-        title={"Configures"}
+        title={"Brandings"}
         perPage={10}
         pagination={<Pagination />}
         actions={<></>}
         exporter={false}
       >
         <Datagrid rowClick="show" bulkActionButtons={false} optimized>
+          <FunctionField
+            label="Portal Type"
+            render={(record) => {
+              if (record.portal_type === 'Admin Portal') {
+                return <Chip label="Admin Portal" color="primary" size="small" />;
+              }
+              return (
+                <Chip 
+                  label={`End User Portal • ${record.tenant_id || record.id}`} 
+                  color="info" 
+                  size="small" 
+                  variant="outlined"
+                />
+              );
+            }}
+            sortable={false}
+          />
           <TextField label="Name" source="name" sortable={true} />
           <FunctionField
             label="Login Outter Color"

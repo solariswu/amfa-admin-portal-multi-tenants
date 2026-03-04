@@ -36,30 +36,30 @@ export const AdminList = (props) => {
   // Filter group choices based on user's role
   const groupChoices = admingroups
     ? admingroups
-        .filter((item) => {
-          if (!permissions) return false;
-          
-          // SA sees all groups
-          if (permissions.roleType === 'SA') return true;
-          
-          // SPA sees their SPA group and all TA groups
-          if (permissions.roleType === 'SPA') {
-            const userSPA = `SPA_${permissions.orgId}`;
-            return item.group === userSPA || item.group.startsWith('TA_');
-          }
-          
-          // TA only sees their own TA group(s)
-          if (permissions.roleType === 'TA') {
-            return permissions.roles.includes(item.group);
-          }
-          
-          return false;
-        })
-        .map((item) => ({ id: item.id, name: item.group }))
+      .filter((item) => {
+        if (!permissions) return false;
+
+        // SA sees all groups
+        if (permissions.roleType === 'SA') return true;
+
+        // SPA sees their SPA group and all TA groups
+        if (permissions.roleType === 'SPA') {
+          const userSPA = `SPA_${permissions.orgId}`;
+          return item.group === userSPA || item.group.startsWith('TA_');
+        }
+
+        // TA only sees their own TA group(s)
+        if (permissions.roleType === 'TA') {
+          return permissions.roles.includes(item.group);
+        }
+
+        return false;
+      })
+      .map((item) => ({ id: item.id, name: item.group }))
     : [];
   const usersFilter = [
     <SelectInput
-      label="Search Admin with Roles"
+      label="Search by Admin Type"
       source="groups"
       choices={groupChoices}
     />,
@@ -164,7 +164,7 @@ export const AdminList = (props) => {
           />
           <FunctionField
             label=""
-            render={(record) => record.groups.includes("SA") ? "" : <UserListMenu record={record} />}
+            render={(record) => record.groups?.includes("SA") ? "" : <UserListMenu record={record} />}
           />
         </Datagrid>
       </List>

@@ -10,8 +10,20 @@ export const handler = async (event) => {
     console.info("EVENT\n" + JSON.stringify(event, null, 2))
 
     // Extract user role from JWT
-    const groups = event.requestContext?.authorizer?.jwt?.claims?.['cognito:groups'];
-    const role = groups ? (Array.isArray(groups) ? groups[0] : groups) : null;
+    // Cognito may return groups as an array, a string "[SA]", or a plain string "SA"
+    const rawGroups = event.requestContext?.authorizer?.jwt?.claims?.['cognito:groups'];
+    let role = null;
+    if (rawGroups) {
+        if (Array.isArray(rawGroups)) {
+            role = rawGroups[0];
+        } else if (typeof rawGroups === 'string') {
+            // Handle "[SA]" or "[SA, SPA_org1]" string format from Cognito
+            const cleaned = rawGroups.replace(/[\[\]]/g, '').trim();
+            role = cleaned.split(/\s*,\s*/)[0] || null;
+        } else {
+            role = rawGroups;
+        }
+    }
     
     if (!role) {
         return createResponse(403, { error: 'User role not found in JWT' });
@@ -20,19 +32,19 @@ export const handler = async (event) => {
     console.log('User role:', role);
 
     // Helper function to get branding from S3
-    const getResData = async (bucketName, s3) => {
+    const getResData = async (bucketName, key, s3) => {
         try {
             const params = {
                 Bucket: bucketName,
-                Key: 'branding.json',
+                Key: key,
             };
             const data = await s3.send(new GetObjectCommand(params));
             const body = await data.Body.transformToString();
             
-            console.log('Got branding from bucket:', bucketName);
+            console.log(`Got branding from s3://${bucketName}/${key}`);
             return JSON.parse(body);
         } catch (error) {
-            console.error(`Error getting branding from ${bucketName}:`, error.message);
+            console.error(`Error getting branding from s3://${bucketName}/${key}:`, error.message);
             return null;
         }
     }
@@ -99,23 +111,28 @@ export const handler = async (event) => {
         const startIdx = 0;
         let resData = [];
 
-        // Always include adminportal branding
-        const adminBranding = await getResData(process.env.ADMINPORTAL_BUCKETNAME, s3ISP);
-        if (adminBranding) {
-            resData.push({ 
-                url: process.env.SP_PORTAL_URL, 
-                ...adminBranding 
-            });
+        const spPortalBucket = `sp-portal-shared-${process.env.SPPORTAL_BUCKET_PREFIX?.split('-')[0] || ''}-${process.env.AWS_REGION || 'us-east-1'}`;
+
+        // SA only: include admin portal branding from shared SP Portal bucket
+        if (role === 'SA') {
+            const adminBranding = await getResData(spPortalBucket, 'branding.json', s3ISP);
+            if (adminBranding) {
+                resData.push({ 
+                    id: 'adminportal',
+                    portal_type: 'Admin Portal',
+                    url: process.env.SP_PORTAL_URL, 
+                    ...adminBranding 
+                });
+            }
         }
 
         // Get accessible tenants and their brandings
         const accessibleTenants = await getAccessibleTenants();
         console.log('Accessible tenants:', accessibleTenants.length);
 
-        // Fetch brandings for each accessible tenant
+        // Fetch tenant brandings from the shared SP Portal bucket
         const promises = accessibleTenants.map(tenant => {
-            const bucketName = `${process.env.SPPORTAL_BUCKET_PREFIX}-${tenant.id}-login`;
-            return getResData(bucketName, s3ISP).then(branding => ({
+            return getResData(spPortalBucket, `branding_${tenant.id}.json`, s3ISP).then(branding => ({
                 tenant,
                 branding
             }));
@@ -126,6 +143,8 @@ export const handler = async (event) => {
         results.forEach(result => {
             if (result.status === 'fulfilled' && result.value.branding) {
                 resData.push({
+                    id: result.value.tenant.id,
+                    portal_type: 'End User Portal',
                     url: process.env.SP_PORTAL_URL,
                     tenant_id: result.value.tenant.id,
                     tenant_name: result.value.tenant.name,
