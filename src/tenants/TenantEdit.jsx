@@ -35,6 +35,7 @@ import {
 
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import awsmobile from "../aws-export";
+import { getApiHeaders } from "../utils/apiHeaders";
 import { canDeleteTenants } from "../utils/roleUtils";
 import { TenantAdminList } from "./TenantAdminList";
 
@@ -87,11 +88,7 @@ export const TenantEdit = () => {
     const res = await fetch(`${apiUrl}/smtpconfig`, {
       method: "POST",
       body: JSON.stringify({ data: smtp }),
-      headers: {
-        Authorization: localStorage.getItem("token"),
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: getApiHeaders(),
     });
     setInSending(false);
     const json = await res.json();

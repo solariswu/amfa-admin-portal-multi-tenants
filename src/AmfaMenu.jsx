@@ -1,4 +1,4 @@
-import { Menu, usePermissions } from 'react-admin';
+import { Menu, usePermissions, useSidebarState } from 'react-admin';
 import { Box, Divider, Typography } from '@mui/material';
 import DomainIcon from '@mui/icons-material/Domain';
 import { TenantSelector } from './Component/TenantSelector';
@@ -12,6 +12,7 @@ import { useTenantContext } from './contexts/TenantContext';
  * │ Global Section       │
  * │  - IT Svc Orgs (SA)  │
  * │  - Tenants (SA/SPA)  │
+ * │  - Admins (all roles)│
  * ├──────────────────────┤
  * │ Tenant Selector      │
  * │  [dropdown / label]  │
@@ -19,7 +20,6 @@ import { useTenantContext } from './contexts/TenantContext';
  * │ Tenant Management    │
  * │  (visible when       │
  * │   tenant selected)   │
- * │  - Admins            │
  * │  - Users             │
  * │  - User Import       │
  * │  - User Groups       │
@@ -30,6 +30,7 @@ import { useTenantContext } from './contexts/TenantContext';
 export const AmfaMenu = () => {
   const { permissions } = usePermissions();
   const { isTenantSelected } = useTenantContext();
+  const [sidebarOpen] = useSidebarState();
 
   const isSAOrSPA = permissions?.isSA || permissions?.isSPA;
   const isSA = permissions?.isSA;
@@ -39,24 +40,30 @@ export const AmfaMenu = () => {
       {/* === Global Section (SA/SPA only) === */}
       {isSA && <Menu.ResourceItem name="organizations" />}
       {isSAOrSPA && <Menu.ResourceItem name="tenants" />}
+      <Menu.ResourceItem name="admins" />
 
-      {/* === Tenant Selector === */}
-      <Divider sx={{ my: 1 }} />
-      <TenantSelector />
+      {/* === Tenant Selector (hidden when sidebar collapsed) === */}
+      {sidebarOpen && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <TenantSelector />
+        </>
+      )}
 
       {/* === Tenant-Scoped Management Section === */}
       {isTenantSelected ? (
         <>
-          <Box sx={{ px: 2, pt: 1, pb: 0.5 }}>
-            <Typography
-              variant="overline"
-              color="text.secondary"
-              sx={{ fontSize: '0.65rem', letterSpacing: '0.08em' }}
-            >
-              Tenant Management
-            </Typography>
-          </Box>
-          <Menu.ResourceItem name="admins" />
+          {sidebarOpen && (
+            <Box sx={{ px: 2, pt: 1, pb: 0.5 }}>
+              <Typography
+                variant="overline"
+                color="text.secondary"
+                sx={{ fontSize: '0.65rem', letterSpacing: '0.08em' }}
+              >
+                Tenant Management
+              </Typography>
+            </Box>
+          )}
           <Menu.ResourceItem name="users" />
           <Menu.ResourceItem name="importusers" />
           <Menu.ResourceItem name="groups" />
@@ -64,25 +71,27 @@ export const AmfaMenu = () => {
           <Menu.ResourceItem name="appclients" />
         </>
       ) : (
-        <Box sx={{ px: 2, py: 2 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              textAlign: 'center',
-              py: 2,
-              px: 1,
-              bgcolor: 'action.hover',
-              borderRadius: 1,
-            }}
-          >
-            <DomainIcon sx={{ fontSize: 32, color: 'text.disabled', mb: 1 }} />
-            <Typography variant="caption" color="text.secondary">
-              Select a tenant above to manage users, groups, brandings and service providers.
-            </Typography>
+        sidebarOpen && (
+          <Box sx={{ px: 2, py: 2 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+                py: 2,
+                px: 1,
+                bgcolor: 'action.hover',
+                borderRadius: 1,
+              }}
+            >
+              <DomainIcon sx={{ fontSize: 32, color: 'text.disabled', mb: 1 }} />
+              <Typography variant="caption" color="text.secondary">
+                Select a tenant above to manage users, groups, brandings and service providers.
+              </Typography>
+            </Box>
           </Box>
-        </Box>
+        )
       )}
     </Menu>
   );

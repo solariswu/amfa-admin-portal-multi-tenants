@@ -82,17 +82,22 @@ export const TenantSelector = () => {
 
     return (
       <Box sx={{ px: 2, py: 1.5 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
+          Select Tenant
+        </Typography>
         <FormControl fullWidth size="small">
-          <InputLabel id="tenant-selector-label" sx={{ fontSize: '0.85rem' }}>
-            Select Tenant
-          </InputLabel>
           <Select
-            labelId="tenant-selector-label"
             value={selectedTenantId || ''}
             onChange={handleChange}
-            label="Select Tenant"
             sx={{ fontSize: '0.85rem' }}
             displayEmpty
+            renderValue={(value) => {
+              if (!value) {
+                return <Typography variant="body2" color="text.disabled">— Select a tenant —</Typography>;
+              }
+              const tenant = tenants?.find(t => t.id === value);
+              return <Typography variant="body2">{tenant?.name || value}</Typography>;
+            }}
             endAdornment={tenantsLoading ? <CircularProgress size={16} sx={{ mr: 2 }} /> : null}
           >
             <MenuItem value="">

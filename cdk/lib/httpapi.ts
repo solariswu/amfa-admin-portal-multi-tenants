@@ -258,6 +258,7 @@ export class SSOApiGateway {
           "X-Amz-Date",
           "Authorization",
           "X-Api-Key",
+          "X-Tenant-Id",
         ],
         allowMethods: [
           CorsHttpMethod.OPTIONS,

@@ -24,6 +24,7 @@ import PublishIcon from "@mui/icons-material/Publish";
 import UserListMenu from "./UserListMenu";
 
 import awsmobile from "../aws-export";
+import { getApiHeaders } from "../utils/apiHeaders";
 
 const apiUrl = awsmobile.aws_backend_api_url;
 
@@ -38,11 +39,7 @@ export const UserList = (props) => {
   useEffect(() => {
     const fetchFeConfigs = async () => {
       let response = await fetch(`${apiUrl}/amfaconfig`, {
-        headers: {
-          Authorization: localStorage.getItem("token"),
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers: getApiHeaders(),
       });
       let data = await response.json();
       setConfigData(data);

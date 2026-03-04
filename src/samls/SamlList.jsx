@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { List, ResourceContextProvider, TopToolbar, CreateButton, Datagrid, TextField, FunctionField, Confirm, useDelete, BooleanField, Button } from "react-admin"
 import awsmobile from '../aws-export';
+import { getApiHeaders } from '../utils/apiHeaders';
 import CircularProgress from '@mui/material/CircularProgress';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
@@ -18,11 +19,7 @@ export const SAMLList = (props) => {
     useEffect(() => {
         const fetchFeConfigs = async () => {
             let response = await fetch(`${apiUrl}/amfaconfig`, {
-                headers: {
-                    Authorization: localStorage.getItem('token'),
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                }
+                headers: getApiHeaders(),
             })
             let data = await response.json();
             setConfigData(data);

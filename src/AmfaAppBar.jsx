@@ -1,81 +1,136 @@
-import { AppBar, usePermissions } from "react-admin";
-import Typography from "@mui/material/Typography";
-import Link from "@mui/material/Link";
-import Chip from "@mui/material/Chip";
+import { AppBar, TitlePortal, UserMenu, Logout, usePermissions } from "react-admin";
+import { Box, Chip, Badge, Tooltip, Link as MuiLink } from "@mui/material";
+import AccountCircle from "@mui/icons-material/AccountCircle";
 import DomainIcon from "@mui/icons-material/Domain";
 import { useTenantContext } from "./contexts/TenantContext";
 
-export const AmfaAppBar = (props) => {
-  const { selectedTenantId, selectedTenantName, isTenantSelected } = useTenantContext();
+/**
+ * Role badge configuration
+ * Maps role types to short labels, colors, and full names
+ */
+const ROLE_CONFIG = {
+  SA:  { label: 'SA',  color: 'error',   fullName: 'Super Admin' },
+  SPA: { label: 'SPA', color: 'primary', fullName: 'Service Provider Admin' },
+  TA:  { label: 'TA',  color: 'success', fullName: 'Tenant Admin' },
+};
+
+/**
+ * Get role config from permissions
+ */
+const getRoleConfig = (permissions) => {
+  if (permissions?.isSA) return ROLE_CONFIG.SA;
+  if (permissions?.isSPA) return ROLE_CONFIG.SPA;
+  if (permissions?.isTA) return ROLE_CONFIG.TA;
+  return null;
+};
+
+/**
+ * Custom UserMenu with role badge on the user icon.
+ * Shows a small "SA" / "SPA" / "TA" badge in the upper-right corner of the icon.
+ */
+const RoleBadgeUserMenu = () => {
   const { permissions } = usePermissions();
+  const roleConfig = getRoleConfig(permissions);
 
-  // Build the tenant display label
-  const tenantLabel = selectedTenantName
-    ? `${selectedTenantName}`
-    : selectedTenantId || null;
-
-  // Build the role badge label
-  const roleLabel = permissions?.isSA
-    ? 'Super Admin'
-    : permissions?.isSPA
-      ? 'Service Provider Admin'
-      : permissions?.isTA
-        ? 'Tenant Admin'
-        : null;
+  const badgedIcon = roleConfig ? (
+    <Tooltip title={roleConfig.fullName} arrow>
+      <Badge
+        badgeContent={roleConfig.label}
+        color={roleConfig.color}
+        overlap="circular"
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        sx={{
+          '& .MuiBadge-badge': {
+            fontSize: '0.55rem',
+            minWidth: 20,
+            height: 16,
+            padding: '0 4px',
+            fontWeight: 'bold',
+          },
+        }}
+      >
+        <AccountCircle />
+      </Badge>
+    </Tooltip>
+  ) : (
+    <AccountCircle />
+  );
 
   return (
-    <AppBar color="secondary">
-      <Typography
-        variant="h6"
-        color="inherit"
-        id="react-admin-title"
+    <UserMenu icon={badgedIcon}>
+      <Logout />
+    </UserMenu>
+  );
+};
+
+/**
+ * Custom toolbar with just the Support link and loading indicator area.
+ */
+const AppBarToolbar = () => (
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <MuiLink
+      href="https://www.apersona.com/contact-us"
+      underline="none"
+      color="inherit"
+      target="_blank"
+      rel="noreferrer"
+      sx={{ fontSize: '0.875rem', whiteSpace: 'nowrap' }}
+    >
+      Support
+    </MuiLink>
+  </Box>
+);
+
+/**
+ * AmfaAppBar
+ * 
+ * Layout: [☰ hamburger] [Page Title...] [logo + tenant chip (centered)] [Support] [👤 User with role badge]
+ */
+export const AmfaAppBar = () => {
+  const { selectedTenantId, selectedTenantName, isTenantSelected } = useTenantContext();
+
+  const tenantLabel = selectedTenantName || selectedTenantId || null;
+
+  return (
+    <AppBar
+      color="secondary"
+      toolbar={<AppBarToolbar />}
+      userMenu={<RoleBadgeUserMenu />}
+    >
+      <TitlePortal />
+      <Box
         sx={{
-          flex: 1,
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          marginLeft: -10,
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+          pointerEvents: 'none',
         }}
-      />
-      <div style={{ flex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+      >
         <img
           src="/apersona-logo2.png"
           alt="logo"
           height="36"
-          style={{ marginTop: "6px" }}
+          style={{ marginTop: 4 }}
         />
-        {isTenantSelected && (
+        {isTenantSelected && tenantLabel && (
           <Chip
-            icon={<DomainIcon sx={{ fontSize: 16 }} />}
+            icon={<DomainIcon sx={{ fontSize: 14 }} />}
             label={tenantLabel}
             size="small"
             sx={{
               bgcolor: 'rgba(255,255,255,0.15)',
               color: 'white',
               '& .MuiChip-icon': { color: 'rgba(255,255,255,0.7)' },
-              fontSize: '0.75rem',
-              height: 24,
+              fontSize: '0.7rem',
+              height: 22,
+              maxWidth: 200,
             }}
           />
         )}
-      </div>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-        {roleLabel && (
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'rgba(255,255,255,0.7)',
-              fontSize: '0.7rem',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {roleLabel}
-          </Typography>
-        )}
-        <Link href="https://www.apersona.com/contact-us" underline="none" color={"white"} target="_blank" rel="noreferrer">
-          Support
-        </Link>
-      </div>
+      </Box>
     </AppBar>
   );
 };
