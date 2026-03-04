@@ -21,6 +21,8 @@ import authProvider from "./Component/authProvider/authProvider";
 import LoginPage from "./Component/authProvider/LoginPage";
 
 import { AmfaLayout } from "./AmfaLayout";
+import { TenantContextProvider } from "./contexts/TenantContext";
+import { AmfaDashboard } from "./Component/SelectTenantPrompt";
 
 import { defaultTheme } from 'react-admin';
 
@@ -75,6 +77,7 @@ export const App = () => (
   <>
     <Favicon url="/favicon.ico" />
     <BrowserRouter>
+      <TenantContextProvider>
       <Admin
         theme={theme}
         disableTelemetry
@@ -82,7 +85,8 @@ export const App = () => (
         dataProvider={dataProvider}
         loginPage={LoginPage}
         layout={AmfaLayout}
-        locale="en"  // Add this...
+        dashboard={AmfaDashboard}
+        locale="en"
         i18nProvider={i18nProvider}
         requireAuth={true}
       >
@@ -99,6 +103,7 @@ export const App = () => (
         <Route path="/user/import" element={<UserImport />} />
       </CustomRoutes> */}
       </Admin>
+      </TenantContextProvider>
     </BrowserRouter>
     <div style={{
       position: 'fixed', right: 0, bottom: 0, left: 0, zIndex: 100,

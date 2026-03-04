@@ -2,6 +2,40 @@ import awsmobile from "../aws-export";
 
 const apiUrl = awsmobile.aws_backend_api_url;
 
+/**
+ * Helper: Get the currently selected tenant ID from sessionStorage.
+ * This is set by TenantContext when user selects a tenant.
+ * @returns {string|null} Selected tenant ID or null
+ */
+const getSelectedTenantId = () => {
+  try {
+    const stored = sessionStorage.getItem('selectedTenant');
+    if (stored) {
+      return JSON.parse(stored).id || null;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+};
+
+/**
+ * Helper: Build standard request headers including Authorization and optional X-Tenant-Id.
+ * @returns {Object} Headers object
+ */
+const getHeaders = () => {
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    Authorization: localStorage.getItem("token"),
+  };
+  const tenantId = getSelectedTenantId();
+  if (tenantId) {
+    headers["X-Tenant-Id"] = tenantId;
+  }
+  return headers;
+};
+
 const queriedTokens = {};
 const currentPageNum = {};
 const currentFiler = {};
@@ -99,11 +133,7 @@ const dataProvider = {
     return fetch(url, {
       method: "POST",
       body: pageToken,
-      headers: {
-        Authorization: token,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -130,11 +160,7 @@ const dataProvider = {
   getOne: (resource, params) => {
     const url = `${apiUrl}/${resource}/${params.id}`;
     return fetch(url, {
-      headers: {
-        Authorization: localStorage.getItem("token"),
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -147,11 +173,7 @@ const dataProvider = {
     const url = `${apiUrl}/${resource}/${params.id}`;
     return fetch(url, {
       method: "DELETE",
-      headers: {
-        Authorization: localStorage.getItem("token"),
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -164,11 +186,7 @@ const dataProvider = {
     const url = `${apiUrl}/${resource}/${params.id}`;
     return fetch(url, {
       method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: localStorage.getItem("token"),
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -182,11 +200,7 @@ const dataProvider = {
     return fetch(url, {
       method: "DELETE",
       body: JSON.stringify(params),
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: localStorage.getItem("token"),
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -200,11 +214,7 @@ const dataProvider = {
     return fetch(url, {
       method: "PUT",
       body: JSON.stringify(params),
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: localStorage.getItem("token"),
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -218,11 +228,7 @@ const dataProvider = {
     return fetch(url, {
       method: "PUT",
       body: JSON.stringify(params),
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: localStorage.getItem("token"),
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -236,11 +242,7 @@ const dataProvider = {
     return fetch(url, {
       method: "PUT",
       body: JSON.stringify(params),
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: localStorage.getItem("token"),
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
@@ -254,11 +256,7 @@ const dataProvider = {
     return fetch(url, {
       method: "POST",
       body: JSON.stringify(params),
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: localStorage.getItem("token"),
-      },
+      headers: getHeaders(),
     })
       .then(captureStatusAndParseJson)
       .then(({ status, json }) => {
