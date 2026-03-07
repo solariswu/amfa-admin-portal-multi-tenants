@@ -39,17 +39,25 @@ const getUsers = async (
 
   let listUsersData = { Users: [] };
 
+  const primaryRole = requesterRoles?.[0] || null;
+
+  // Users with no role can only see themselves (handled by caller)
+  if (!primaryRole) {
+    console.log("User has no roles, returning empty list");
+    return { users: [], paginationToken: null, statusCode: 200 };
+  }
+
   // listing users with desired userGroup
   if (userGroup) {
     // only SA can list SA Users
-    if (requesterRoles[0] !== "SA" && userGroup === "SA") {
+    if (primaryRole !== "SA" && userGroup === "SA") {
       return { users: [], paginationToken: null, statusCode: 403 };
     }
 
     // TA and SPA_yyy can only list users in their allowed groups
     if (
-      requesterRoles[0] !== "SA" &&
-      !requesterRoles[0].startsWith("SPA_") &&
+      primaryRole !== "SA" &&
+      !primaryRole.startsWith("SPA_") &&
       !requesterRoles.includes(userGroup)
     ) {
       return { users: [], paginationToken: null, statusCode: 403 };
@@ -114,15 +122,15 @@ const getUsers = async (
           console.log("err", error);
         }
 
-        if (!userGroup) {
+        if (!userGroup && primaryRole) {
           // filter out "SA" users when requesterRole is "SPA_yyy"
-          if (requesterRoles[0].startsWith("SPA_")) {
+          if (primaryRole.startsWith("SPA_")) {
             usersData.Users = usersData.Users.filter(
               (user) => user.groups.includes("SA") === false,
             );
           }
           // filter out users not in requester's groups when requesterRole is "TA_xxx"
-          if (!requesterRoles[0].startsWith("SPA_") && requesterRoles[0] !== "SA") {
+          if (!primaryRole.startsWith("SPA_") && primaryRole !== "SA") {
             usersData.Users = usersData.Users.filter((user) =>
               user.groups.some((group) => requesterRoles.includes(group)),
             );

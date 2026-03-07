@@ -10,6 +10,8 @@ import {
   SecretsManagerClient,
   CreateSecretCommand,
   PutSecretValueCommand,
+  GetSecretValueCommand,
+  ResourceNotFoundException,
 } from "@aws-sdk/client-secrets-manager";
 
 import {
@@ -25,8 +27,9 @@ const cognito = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION,
 });
 
-// Secret name pattern (same as used in provision-tenant/asm-shared.mjs)
+// Secret name patterns
 const ORG_SECRET_PREFIX = "apersona/asm/org/";
+const INSTALL_KEY_SECRET = "apersona/asm/installkey";
 
 /**
  * List all organizations from DynamoDB
@@ -72,22 +75,93 @@ export async function listOrganizations(dynamodb, tableName) {
 }
 
 /**
+ * Get ASM install key from Secrets Manager.
+ * Returns null if not found.
+ */
+async function getInstallKeyFromSecrets() {
+  try {
+    const secret = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: INSTALL_KEY_SECRET }),
+    );
+    const data = JSON.parse(secret.SecretString);
+    return data.installKey || null;
+  } catch (error) {
+    if (error instanceof ResourceNotFoundException) {
+      console.log("[ASM] Install key not found in Secrets Manager");
+      return null;
+    }
+    console.error("[ASM] Error reading install key:", error.message);
+    return null;
+  }
+}
+
+/**
+ * Store ASM install key in Secrets Manager for future use.
+ */
+async function storeInstallKey(installKey) {
+  const secretString = JSON.stringify({ installKey });
+  try {
+    await secretsManager.send(
+      new CreateSecretCommand({
+        Name: INSTALL_KEY_SECRET,
+        SecretString: secretString,
+        Description: "ASM install key for createServiceProvider API",
+      }),
+    );
+    console.log("[ASM] ✓ Install key stored in Secrets Manager");
+  } catch (error) {
+    if (error.name === "ResourceExistsException") {
+      await secretsManager.send(
+        new PutSecretValueCommand({
+          SecretId: INSTALL_KEY_SECRET,
+          SecretString: secretString,
+        }),
+      );
+      console.log("[ASM] ✓ Install key updated in Secrets Manager");
+    } else {
+      console.error("[ASM] Warning: Failed to store install key:", error.message);
+    }
+  }
+}
+
+/**
  * Register organization with ASM portal as a Service Provider.
  *
- * Calls createServiceProvider.ap and stores the returned
- * serviceProviderId + asmSecretKey in Secrets Manager.
+ * Calls createServiceProvider.ap with asmSecretKey (install key) and stores
+ * the returned serviceProviderId + asmSecretKey in Secrets Manager.
+ *
+ * Install key resolution order:
+ * 1. Secrets Manager (apersona/asm/installkey) — set during deployment
+ * 2. Request payload (data.asmInstallKey) — provided by SA user via frontend dialog
+ * If neither exists, throws ASM_INSTALL_KEY_REQUIRED error.
  *
  * @param {string} orgId - Organization ID
- * @param {string} creatorEmail - Email of the admin user creating the org (used as requestedBy & email)
+ * @param {string} creatorEmail - Email of the admin user creating the org
+ * @param {string|null} requestInstallKey - Install key from request payload (optional)
  * @returns {Promise<Object>} { serviceProviderId, asmSecretKey }
  */
-async function registerOrgWithASM(orgId, creatorEmail) {
+async function registerOrgWithASM(orgId, creatorEmail, requestInstallKey = null) {
   const asmPortalUrl = process.env.ASM_PORTAL_URL;
   const awsAccount = process.env.ACCOUNT_ID;
   const awsRegion = process.env.AWS_REGION;
 
   if (!asmPortalUrl) {
     throw new Error("ASM_PORTAL_URL environment variable is required");
+  }
+
+  // Resolve install key: Secrets Manager first, then request payload
+  let installKey = await getInstallKeyFromSecrets();
+
+  if (!installKey && requestInstallKey) {
+    installKey = requestInstallKey;
+    // Store for future use
+    await storeInstallKey(installKey);
+  }
+
+  if (!installKey) {
+    const error = new Error("ASM Install Key is required to register organizations. Please provide it.");
+    error.code = "ASM_INSTALL_KEY_REQUIRED";
+    throw error;
   }
 
   console.log(`[ASM] Registering org '${orgId}' as Service Provider...`);
@@ -100,6 +174,7 @@ async function registerOrgWithASM(orgId, creatorEmail) {
     awsAccountId: awsAccount,
     awsRegion: awsRegion,
     email: creatorEmail,
+    asmSecretKey: installKey,
   });
 
   const response = await fetch(`${asmPortalUrl}/createServiceProvider.ap`, {
@@ -201,10 +276,13 @@ export async function createOrganization(
   // Step 1: Register with ASM portal (fail-fast before saving to DB)
   let asmCredentials;
   try {
-    asmCredentials = await registerOrgWithASM(data.id, creatorEmail);
+    asmCredentials = await registerOrgWithASM(data.id, creatorEmail, data.asmInstallKey || null);
   } catch (asmError) {
     console.error("[ASM] Organization registration failed:", asmError.message);
-    throw new Error(`ASM registration failed: ${asmError.message}`);
+    // Preserve the error code for frontend to detect ASM_INSTALL_KEY_REQUIRED
+    const err = new Error(`ASM registration failed: ${asmError.message}`);
+    if (asmError.code) err.code = asmError.code;
+    throw err;
   }
 
   // Step 2: Save organization to DynamoDB

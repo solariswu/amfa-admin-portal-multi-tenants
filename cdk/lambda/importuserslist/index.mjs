@@ -1,6 +1,7 @@
 //AWS configurations
 import { ScanCommand, DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
 import postResData from "./post.mjs";
 
 const dynamoDBClient = new DynamoDBClient({ region: process.env.AWS_REGION });
@@ -9,20 +10,35 @@ const s3Client = new S3Client({ region: process.env.AWS_REGION });
 export const handler = async (event) => {
   console.info("EVENT\n" + JSON.stringify(event, null, 2));
 
-  //To get the list of Users in aws Cognito
   let errMsg = { type: "exception", message: "Service Error" };
 
   try {
+    // 1. Extract tenant_id from request (X-Tenant-Id header)
+    const tenantId = getTenantIdFromRequest(event);
+    if (!tenantId) {
+      return createResponse(400, { error: 'tenant_id required in request' });
+    }
+
+    // 2. Validate authorization and get tenant's user pool ID
+    const authResult = await validateTenantAccess(event, tenantId);
+    if (!authResult.authorized) {
+      return createResponse(authResult.statusCode, { error: authResult.error });
+    }
+
+    const { userPoolId } = authResult;
+    console.log(`Authorized access for tenant ${tenantId}, userPoolId: ${userPoolId}`);
+
     if (
       event.requestContext.http.method === "POST" &&
       (!event.queryStringParameters || !event.queryStringParameters.page)
     ) {
-      // import users
+      // import users — pass dynamic userPoolId and tenantId
       const body = JSON.parse(event.body);
       console.log("POST data: ", body);
       const postResult = await postResData(
         body,
-        process.env.USERPOOL_ID,
+        userPoolId,
+        tenantId,
         dynamoDBClient,
         s3Client,
       );
@@ -45,7 +61,7 @@ export const handler = async (event) => {
           statusCode: 200,
           headers: {
             "Access-Control-Allow-Headers":
-              "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+              "Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
             "Access-Control-Expose-Headers": "Content-Range",
@@ -73,10 +89,10 @@ export const handler = async (event) => {
         PaginationToken = event.body;
       }
 
-      // scan dynamodb by userpoolId
+      // scan dynamodb by userPoolId (dynamic, from tenant resolution)
       const FilterExpression = "userpoolid = :userpoolId";
       const ExpressionAttributeValues = {
-        ":userpoolId": { S: process.env.USERPOOL_ID },
+        ":userpoolId": { S: userPoolId },
       };
 
       let resData = [];
@@ -88,8 +104,7 @@ export const handler = async (event) => {
           ...(PaginationToken && { ExclusiveStartKey: PaginationToken }),
           FilterExpression,
           ExpressionAttributeValues,
-          // ProjectionExpression: "jobid, status, importedusers, failedusers, createdby, timestamp",
-          Limit: 1000, // No of users to display per page
+          Limit: 1000,
           ReturnConsumedCapacity: "NONE",
         };
 
@@ -141,8 +156,7 @@ export const handler = async (event) => {
         resData.length,
       );
 
-      // If no remaining jobs are there, no paginationToken is returned from cognito
-      PaginationToken = end >= resData.length ? null : end; //listImportUsersJobData.LastEvaluatedKey;
+      PaginationToken = end >= resData.length ? null : end;
 
       if (resData.length > start) {
         resData = resData.slice(start, end);
@@ -172,7 +186,6 @@ export const handler = async (event) => {
 
       if (resData.length > 0) {
         res = resData.map((item) => {
-          // console.log ('resdata item', item);
           let data = {};
 
           data.id = item.jobid.S;
@@ -199,7 +212,6 @@ export const handler = async (event) => {
               console.log("failedusers parse error: ", e);
             }
             data.FailedUsers = failedUsersNumber;
-            // data.FailureDetails = FailureDetails;
           }
           if (item.totalusers) {
             data.TotalUsers = parseInt(item.totalusers.N);
@@ -215,7 +227,7 @@ export const handler = async (event) => {
         statusCode: 200,
         headers: {
           "Access-Control-Allow-Headers":
-            "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+            "Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With",
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
           "Access-Control-Expose-Headers": "Content-Range",
@@ -223,7 +235,6 @@ export const handler = async (event) => {
         },
         body: JSON.stringify({
           data: res,
-          // total: usersCount,//resData.length,
           pageInfo: {
             hasPreviousPage: page > 1 ? true : false,
             hasNextPage: PaginationToken ? true : false,
@@ -266,12 +277,11 @@ export const handler = async (event) => {
     }
   }
 
-  // TODO implement
   const response = {
     statusCode: 500,
     headers: {
       "Access-Control-Allow-Headers":
-        "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+        "Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
       "Access-Control-Expose-Headers": "Content-Range",

@@ -1,6 +1,0 @@
-export const AdminPortalUserPoolId="eu-west-1_ibOks955Q"
-export const AdminPortalClientId="4kbb8vveiplsjqdb8onaldv7nq"
-export const AdminHostedUIURL="https://adminportal-amfa-dev004.auth.eu-west-1.amazoncognito.com"
-export const SPPortalUrl="https://apersona.netlify.app"
-export const ProjectRegion="eu-west-1"
-export const AdminPortalDomainName="adminportal.amfa.aws-amplify.dev"

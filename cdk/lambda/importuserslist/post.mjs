@@ -65,7 +65,7 @@ const genImportUsersJob = async (
   return jobid;
 };
 
-export const postResData = async (data, userpoolId, dynamodbISP, s3) => {
+export const postResData = async (data, userpoolId, tenantId, dynamodbISP, s3) => {
   try {
     const jobid = await genImportUsersJob(
       userpoolId,
@@ -95,6 +95,7 @@ export const postResData = async (data, userpoolId, dynamodbISP, s3) => {
         jobid,
         notify: data.notify,
         userpoolId,
+        tenantId,
         admin: data.admin,
         tableName: process.env.IMPORTUSERS_JOB_ID_TABLE,
       }),

@@ -39,7 +39,7 @@ const headers = {
   "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
 };
 
-const sendResult = async (jobid, failedNum, totalNum, secret) => {
+const sendResult = async (jobid, failedNum, totalNum, secret, tenantId) => {
   const nodemailer = require("nodemailer");
   const transporter = nodemailer.createTransport({
     host: secret.host,
@@ -66,8 +66,8 @@ const sendResult = async (jobid, failedNum, totalNum, secret) => {
       from: secret.user, // sender address
       to: secret.toUser, // list of receivers
       subject: "aPersona Identity AdminPortal Import User Job Completed", // Subject line
-      text: `aPersona Identity Tenant ${process.env.TENANT_ID} user import job - ${jobid} has been accomplished.\n${totalNum - failedNum} of ${totalNum} users import successfully.\nYou may open admin portal to check details.`, // plain text body
-      html: `<p>aPersona Identity Tenant ${process.env.TENANT_ID} user import job - ${jobid} has been accomplished.</p><p>${totalNum - failedNum} of ${totalNum} users import successfully.</p><p>You may open the admin portal to check details..</p>`, // html body
+      text: `aPersona Identity Tenant ${tenantId} user import job - ${jobid} has been accomplished.\n${totalNum - failedNum} of ${totalNum} users import successfully.\nYou may open admin portal to check details.`, // plain text body
+      html: `<p>aPersona Identity Tenant ${tenantId} user import job - ${jobid} has been accomplished.</p><p>${totalNum - failedNum} of ${totalNum} users import successfully.</p><p>You may open the admin portal to check details.</p>`, // html body
     });
 
     console.log("Message sent: %s", info.messageId);
@@ -151,7 +151,7 @@ export const handler = async (event) => {
   };
 
   console.info("EVENT\n" + JSON.stringify(event, null, 2));
-  const { notify, userpoolId, admin } = event;
+  const { notify, userpoolId, tenantId, admin } = event;
 
   try {
     // get users csv content from dynamodb table.
@@ -471,6 +471,7 @@ export const handler = async (event) => {
           jobid: event.jobid,
           notify,
           userpoolId,
+          tenantId,
           admin,
           tableName: event.tableName,
         }),
@@ -489,14 +490,15 @@ export const handler = async (event) => {
       };
     } else {
       // send email to admin
-      if (admin) {
-        let smtpRes = await getSMTP();
+      if (admin && tenantId) {
+        let smtpRes = await getSMTP(tenantId);
         smtpRes.toUser = admin;
         await sendResult(
           event.jobid,
           failedDetails.length,
           userData.length,
           smtpRes,
+          tenantId,
         );
       }
     }

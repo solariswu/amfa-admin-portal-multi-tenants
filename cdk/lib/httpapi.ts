@@ -1033,15 +1033,17 @@ export class SSOApiGateway {
       }),
     );
 
-    // Secrets Manager permissions for ASM org credentials
+    // Secrets Manager permissions for ASM org credentials and install key
     lambda.role?.attachInlinePolicy(
       new Policy(this.scope, `${lambdaName}-secrets-policy`, {
         statements: [
           new PolicyStatement({
             resources: [
               `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/asm/org/*`,
+              `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/asm/installkey*`,
             ],
             actions: [
+              "secretsmanager:GetSecretValue",
               "secretsmanager:CreateSecret",
               "secretsmanager:PutSecretValue",
               "secretsmanager:TagResource",
@@ -1100,6 +1102,7 @@ export class SSOApiGateway {
         environment: {
           AMFA_BASE_URL: this.amfaBaseUrl,
           AMFA_SPINFO_TABLE: "amfa-spinfo",
+          AMFATENANT_TABLE,
           IMPORTUSERS_JOB_ID_TABLE: "amfa-importjobid",
           IMPORTUSERS_WORKER_LAMBDA: this.importUsersWorkerLambda.functionName,
           IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,

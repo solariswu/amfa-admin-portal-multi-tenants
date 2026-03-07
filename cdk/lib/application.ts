@@ -15,6 +15,7 @@ import { Provider } from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 
 import { WebApplication } from "./webapp";
+import { Source } from "aws-cdk-lib/aws-s3-deployment";
 
 import { SSOApiGateway } from "./httpapi";
 import { SSOUserPool } from "./userpool";
@@ -319,6 +320,33 @@ export class AppStack extends Stack {
     new CfnOutput(this, "Admin Portal KickOff URL", {
       value: `https://${props.domainName}`,
     });
+
+    // Generate amfaext.js and deploy alongside dist/ in a SINGLE BucketDeployment
+    // This avoids pruning conflicts that occurred with separate deployments
+    const hostedUiStr =
+      hostedUI_domain_prefix?.replace(/\./g, "").toLowerCase() +
+      (props.env?.region || "") +
+      (props.env?.account || "");
+    let hostedUiHash = 0;
+    if (hostedUiStr) {
+      for (let i = 0; i < hostedUiStr.length; i++) {
+        hostedUiHash = ((hostedUiHash << 5) - hostedUiHash + hostedUiStr.charCodeAt(i)) | 0;
+      }
+    }
+    const hostedUiUrl = `https://${hostedUI_domain_prefix}-${(hostedUiHash >>> 0).toString(36)}.auth.${props.env?.region}.amazoncognito.com`;
+
+    const amfaExtContent = [
+      `export const AdminPortalUserPoolId="${userPool.adminUserpool.userPoolId}"`,
+      `export const AdminPortalClientId="${userPool.adminClient.userPoolClientId}"`,
+      `export const AdminHostedUIURL="${hostedUiUrl}"`,
+      `export const ProjectRegion='${props.env?.region}'`,
+      `export const AdminPortalDomainName='${props.domainName}'`,
+    ].join("\n");
+
+    // Deploy dist/ + amfaext.js together in one BucketDeployment
+    webapp.deployAssets([
+      Source.data("amfaext.js", amfaExtContent),
+    ]);
 
     // Note: Tenant information is now dynamically queried from DynamoDB
     // No need for static CloudFormation outputs

@@ -19,6 +19,7 @@ import {
   Typography,
 } from "@mui/material";
 import awsmobile from "../aws-export";
+import { getApiHeaders } from "../utils/apiHeaders";
 import Papa from "papaparse";
 import { UserImportListWidget } from "./UserImportListWidget";
 
@@ -192,11 +193,7 @@ export const ImportUsersCreate = () => {
             notify: checked,
             totalusers: filteredData.length,
           }),
-          headers: {
-            Authorization: localStorage.getItem("token"),
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
+          headers: getApiHeaders(),
         });
         const json = await res.json();
         console.log('import done json', json);

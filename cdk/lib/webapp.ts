@@ -38,9 +38,29 @@ export class WebApplication {
 		this.assetsPath = props.assetsPath;
 
 		this.s3bucket = this.createS3Bucket(service_name);
-		this.distribution = this.createDistribution(this.s3bucket, this.assetsPath);
+		this.distribution = this.createDistribution(this.s3bucket);
 		this.aRecord = this.createRoute53ARecord(this.distribution);
 
+	}
+
+	/**
+	 * Deploy assets to S3 and invalidate CloudFront.
+	 * Call this after all resources (userPool, etc.) are created,
+	 * so additional sources (like amfaext.js) can reference CDK tokens.
+	 * 
+	 * @param additionalSources - Extra Source objects to include alongside dist/
+	 */
+	public deployAssets(additionalSources: import("aws-cdk-lib/aws-s3-deployment").ISource[] = []) {
+		const name = 'BucketDeployment-main';
+		new BucketDeployment(this.scope, name, {
+			destinationBucket: this.s3bucket,
+			sources: [
+				Source.asset(path.resolve(__dirname, this.assetsPath)),
+				...additionalSources,
+			],
+			distribution: this.distribution,
+			distributionPaths: ['/*'],
+		});
 	}
 
 	private createS3Bucket(name: string) {
@@ -51,7 +71,7 @@ export class WebApplication {
 		});
 	}
 
-	private createDistribution(bucket: Bucket, assetsPath: string) {
+	private createDistribution(bucket: Bucket) {
 		// config Cloudfront read to S3
 		let name = 'OriginAccessIdentity-main';
 		const originAccessIdentity = new OriginAccessIdentity(
@@ -81,15 +101,6 @@ export class WebApplication {
 				responsePagePath: '/index.html',
 				ttl: Duration.minutes(5),
 			}],
-		});
-
-		// assign web release path to s3 deployment
-		name = 'BucketDeployment-main';
-		new BucketDeployment(this.scope, name, {
-			destinationBucket: bucket,
-			sources: [Source.asset(path.resolve(__dirname, assetsPath))],
-			distribution,
-			distributionPaths: ['/*'],
 		});
 
 		return distribution;

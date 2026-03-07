@@ -24,6 +24,9 @@ import {
   ResourceNotFoundException,
 } from "@aws-sdk/client-secrets-manager";
 
+// Install key secret name
+const INSTALL_KEY_SECRET = "apersona/asm/installkey";
+
 const secretsManager = new SecretsManagerClient({
   region: process.env.AWS_REGION,
 });
@@ -80,18 +83,34 @@ export async function getOrCreateServiceProvider(orgId, contactEmail) {
     throw new Error("ASM_PORTAL_URL environment variable is required");
   }
 
+  // Get install key from Secrets Manager
+  let installKey = null;
+  try {
+    const secret = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: INSTALL_KEY_SECRET }),
+    );
+    const data = JSON.parse(secret.SecretString);
+    installKey = data.installKey || null;
+  } catch (error) {
+    if (!(error instanceof ResourceNotFoundException)) {
+      console.warn("[ASM] Warning: Error reading install key:", error.message);
+    }
+  }
+
   const formData = new URLSearchParams({
     serviceProviderName: orgId,
     requestedBy: contactEmail,
     awsAccountId: awsAccount,
     awsRegion: awsRegion,
     email: contactEmail,
+    ...(installKey && { asmSecretKey: installKey }),
   });
 
   console.log(`[ASM] Creating Service Provider:`);
   console.log(`[ASM]   URL: ${asmPortalUrl}/createServiceProvider.ap`);
   console.log(`[ASM]   Org ID: ${orgId}`);
   console.log(`[ASM]   Contact: ${contactEmail}`);
+  console.log(`[ASM]   Has install key: ${!!installKey}`);
 
   const response = await fetch(`${asmPortalUrl}/createServiceProvider.ap`, {
     method: "POST",

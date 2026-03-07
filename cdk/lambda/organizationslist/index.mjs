@@ -232,10 +232,11 @@ export const handler = async (event) => {
     console.error("Error:", error);
 
     return {
-      statusCode: 500,
+      statusCode: error.code === "ASM_INSTALL_KEY_REQUIRED" ? 400 : 500,
       headers: corsHeaders,
       body: JSON.stringify({
         type: "error",
+        code: error.code || "INTERNAL_ERROR",
         message: error.message || "Internal server error",
       }),
     };
