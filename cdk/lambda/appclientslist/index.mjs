@@ -5,6 +5,7 @@ import {
 	CognitoIdentityProviderClient,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
 
 import postResData from "./post.mjs";
 
@@ -20,17 +21,31 @@ export const handler = async (event) => {
 	let errMsg = { type: 'exception', message: 'Service Error' };
 
 	try {
+		// Multi-tenant: resolve tenant from X-Tenant-Id header
+		const tenantId = getTenantIdFromRequest(event);
+		if (!tenantId) {
+			return createResponse(400, { error: 'tenant_id required in request' });
+		}
+
+		const authResult = await validateTenantAccess(event, tenantId);
+		if (!authResult.authorized) {
+			return createResponse(authResult.statusCode, { error: authResult.error });
+		}
+
+		const { userPoolId } = authResult;
+		const spInfoTable = `amfa-spinfo-${tenantId}`;
+		console.log(`Tenant ${tenantId}, userPoolId: ${userPoolId}, spInfoTable: ${spInfoTable}`);
 
 		if (event.requestContext.http.method === 'POST' && (!event.queryStringParameters || !event.queryStringParameters.page)) {
-			// invite new user
+			// create new app client
 			const body = JSON.parse(event.body);
 			console.log('POST data: ', body);
-			const postResult = await postResData(body.data, cognitoISP, dynamodbISP);
+			const postResult = await postResData(body.data, cognitoISP, dynamodbISP, userPoolId, spInfoTable);
 
 			return {
 				statusCode: 200,
 				headers: {
-					'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
+					'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With',
 					'Access-Control-Allow-Origin': '*',
 					'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
 					'Access-Control-Expose-Headers': 'Content-Range',
@@ -45,8 +60,8 @@ export const handler = async (event) => {
 
 			const params = {
 				Limit,
-				...(event.body && { NextToken: event.body }), // tokens[1] contain the token query for page 1.
-				UserPoolId: process.env.USERPOOL_ID,
+				...(event.body && { NextToken: event.body }),
+				UserPoolId: userPoolId,
 			}
 
 			console.info('params', params);
@@ -64,7 +79,7 @@ export const handler = async (event) => {
 						!appclient.ClientName.startsWith('amfasys_'));
 				for (const item of res) {
 					const clientData = await cognitoISP.send(new DescribeUserPoolClientCommand({
-						ClientId: item.ClientId, UserPoolId: process.env.USERPOOL_ID
+						ClientId: item.ClientId, UserPoolId: userPoolId
 					}));
 					resData.push({
 						id: item.ClientId,
@@ -77,8 +92,6 @@ export const handler = async (event) => {
 				}
 			}
 
-			// getList of React-admin expects response to have header called 'Content-Range'.
-			// when we add new header in response, we have to acknowledge it, so 'Access-Control-Expose-Headers'
 			const page = parseInt(event.queryStringParameters.page);
 			const perPage = parseInt(event.queryStringParameters.perPage);
 			const start = (page - 1) * perPage;
@@ -93,7 +106,7 @@ export const handler = async (event) => {
 			return {
 				statusCode: 200,
 				headers: {
-					'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
+					'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With',
 					'Access-Control-Allow-Origin': '*',
 					'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
 					'Access-Control-Expose-Headers': 'Content-Range',
@@ -121,7 +134,6 @@ export const handler = async (event) => {
 				break;
 		}
 	}
-	// TODO implement
 	const response = {
 		statusCode: 500,
 		body: JSON.stringify(errMsg),

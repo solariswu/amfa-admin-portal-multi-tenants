@@ -2,9 +2,9 @@ import {
 	ListIdentityProvidersCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-export const getIdPNames = async (cognitoISP) => {
+export const getIdPNames = async (cognitoISP, userPoolId) => {
 	const data = await cognitoISP.send(new ListIdentityProvidersCommand({
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 	}));
 
 	return data.Providers.map(item => item.ProviderName);

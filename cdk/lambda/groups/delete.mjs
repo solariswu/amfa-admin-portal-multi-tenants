@@ -2,10 +2,10 @@
 //AWS configurations
 import { DeleteGroupCommand } from "@aws-sdk/client-cognito-identity-provider";
 
-export const deleteResData = async (GroupName, cognitoISP) => {
+export const deleteResData = async (GroupName, cognitoISP, userPoolId) => {
 	const params = {
 		GroupName,
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 	};
 
 	const data = await cognitoISP.send(new DeleteGroupCommand(params));

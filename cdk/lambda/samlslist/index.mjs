@@ -2,10 +2,9 @@ import {
     DynamoDBClient,
     GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
 
 import postResData from "./post.mjs";
-
-//AWS configurations
 
 const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
 
@@ -18,19 +17,32 @@ export const handler = async (event) => {
     let errMsg = { type: 'exception', message: 'Service Error' };
 
     try {
+        // Multi-tenant: resolve tenant from X-Tenant-Id header
+        const tenantId = getTenantIdFromRequest(event);
+        if (!tenantId) {
+            return createResponse(400, { error: 'tenant_id required in request' });
+        }
+
+        const authResult = await validateTenantAccess(event, tenantId);
+        if (!authResult.authorized) {
+            return createResponse(authResult.statusCode, { error: authResult.error });
+        }
+
+        const spInfoTable = `amfa-spinfo-${tenantId}`;
+        console.log(`Tenant ${tenantId}, spInfoTable: ${spInfoTable}`);
 
         if (event.requestContext.http.method === 'POST' && (!event.queryStringParameters || !event.queryStringParameters.page)) {
-            // invite new user
+            // create new SAML SP
             const body = JSON.parse(event.body);
             console.log('POST data: ', body);
-            const postResult = await postResData(body.data, samlurl, dynamodb, null, event.headers.authorization);
+            const postResult = await postResData(body.data, samlurl, dynamodb, null, event.headers.authorization, spInfoTable);
 
             console.log('postResult', postResult);
 
             return {
                 statusCode: postResult.statusCode,
                 headers: {
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With',
                     'Access-Control-Allow-Origin': '*',
                     'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
                     'Access-Control-Expose-Headers': 'Content-Range',
@@ -44,8 +56,8 @@ export const handler = async (event) => {
             let NextToken = event.body ? event.body : "";
 
             const res = await fetch(samlurl, {
-                method: "GET", // *GET, POST, PUT, DELETE, etc.
-                cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+                method: "GET",
+                cache: "no-cache",
                 headers: {
                     "Content-Type": "application/json",
                     "Authorization": event.headers.authorization,
@@ -67,7 +79,7 @@ export const handler = async (event) => {
                     console.log('samlslist getting item with id from ddb', resData[item].id)
 
                     const params = {
-                        TableName: process.env.AMFA_SPINFO_TABLE,
+                        TableName: spInfoTable,
                         Key: {
                             id: { S: `#SAML#${resData[item].id}` },
                         },
@@ -103,8 +115,7 @@ export const handler = async (event) => {
                     })
                 }
             }
-            // getList of React-admin expects response to have header called 'Content-Range'.
-            // when we add new header in response, we have to acknowledge it, so 'Access-Control-Expose-Headers'
+
             const page = parseInt(event.queryStringParameters.page);
             const perPage = parseInt(event.queryStringParameters.perPage);
             const start = (page - 1) * perPage;
@@ -119,7 +130,7 @@ export const handler = async (event) => {
             return {
                 statusCode: 200,
                 headers: {
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With',
                     'Access-Control-Allow-Origin': '*',
                     'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
                     'Access-Control-Expose-Headers': 'Content-Range',
@@ -147,7 +158,6 @@ export const handler = async (event) => {
                 break;
         }
     }
-    // TODO implement
     const response = {
         statusCode: 500,
         body: JSON.stringify(errMsg),

@@ -3,6 +3,7 @@ import { deleteResData } from './delete.mjs';
 import { getResData } from './get.mjs';
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
 
 const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
 
@@ -15,37 +16,43 @@ export const handler = async (event) => {
 	console.log('event.requestContext.http.method: ', event.requestContext.http.method);
 
 	const headers = {
-		'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Requested-With',
+		'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Tenant-Id,X-Requested-With',
 		'Access-Control-Allow-Origin': '*',
 		'Access-Control-Allow-Methods': 'OPTIONS,GET,PUT,DELETE',
 	};
 
 	const response = (statusCode = 200, body) => {
-		console.log('return with:', {
-			statusCode,
-			headers,
-			body,
-		});
-		return {
-			statusCode,
-			headers,
-			body,
-		};
+		console.log('return with:', { statusCode, headers, body });
+		return { statusCode, headers, body };
 	};
 
 	const cognitoToken = event.headers.authorization;
 
 	try {
+		// Multi-tenant: resolve tenant from X-Tenant-Id header
+		const tenantId = getTenantIdFromRequest(event);
+		if (!tenantId) {
+			return createResponse(400, { error: 'tenant_id required in request' });
+		}
+
+		const authResult = await validateTenantAccess(event, tenantId);
+		if (!authResult.authorized) {
+			return createResponse(authResult.statusCode, { error: authResult.error });
+		}
+
+		const spInfoTable = `amfa-spinfo-${tenantId}`;
+		console.log(`Tenant ${tenantId}, spInfoTable: ${spInfoTable}`);
+
 		switch (event.requestContext.http.method) {
 			case 'GET':
-				const getResult = await getResData(event.pathParameters?.id, samlurl, dynamodb, cognitoToken);
+				const getResult = await getResData(event.pathParameters?.id, samlurl, dynamodb, cognitoToken, spInfoTable);
 				return response(200, JSON.stringify({ data: getResult }));
 			case 'PUT':
 				const payload = JSON.parse(event.body);
-				const putResult = await putResData(payload.data, dynamodb);
+				const putResult = await putResData(payload.data, dynamodb, spInfoTable);
 				return response(200, JSON.stringify({ data: putResult }));
 			case 'DELETE':
-				const deleteResult = await deleteResData(event.pathParameters?.id, samlurl, cognitoToken, samlReloadUrl, dynamodb);
+				const deleteResult = await deleteResData(event.pathParameters?.id, samlurl, cognitoToken, samlReloadUrl, dynamodb, spInfoTable);
 				return response(200, JSON.stringify({ data: deleteResult }));
 			case 'OPTIONS':
 				return response(200, JSON.stringify({ data: 'ok' }));
@@ -63,5 +70,3 @@ export const handler = async (event) => {
 		body: JSON.stringify({ type: 'exception', message: 'Service Error' }),
 	};
 }
-
-

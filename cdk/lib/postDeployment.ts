@@ -55,6 +55,7 @@ export const createPostDeploymentLambda = (
             "cognito-idp:DescribeUserPoolClient",
             "cognito-idp:UpdateUserPoolClient",
             "cognito-idp:AdminCreateUser",
+            "cognito-idp:AdminAddUserToGroup",
             "cognito-idp:CreateGroup",
           ],
           resources: [

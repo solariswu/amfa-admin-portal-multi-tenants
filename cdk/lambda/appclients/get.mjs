@@ -4,10 +4,10 @@ import { DescribeUserPoolClientCommand, DescribeUserPoolCommand } from "@aws-sdk
 import { GetItemCommand } from '@aws-sdk/client-dynamodb';
 
 
-const getSPInfo = async (dynamodb, clientId) => {
+const getSPInfo = async (dynamodb, clientId, spInfoTable) => {
 
     const params = {
-        TableName: process.env.AMFA_SPINFO_TABLE,
+        TableName: spInfoTable,
         Key: {
             id: { S: `#OIDC#${clientId}` },
         },
@@ -47,11 +47,11 @@ const getSPInfo = async (dynamodb, clientId) => {
 }
 
 
-export const getResData = async (ClientId, cognitoISP, dynamodb) => {
+export const getResData = async (ClientId, cognitoISP, dynamodb, userPoolId, spInfoTable) => {
 
     const params = {
         ClientId,
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId,
     };
 
     const data = await cognitoISP.send(new DescribeUserPoolClientCommand(params));
@@ -113,7 +113,7 @@ export const getResData = async (ClientId, cognitoISP, dynamodb) => {
         }
     }
 
-    const extraInfo = await getSPInfo(dynamodb, ClientId);
+    const extraInfo = await getSPInfo(dynamodb, ClientId, spInfoTable);
 
     return {
         id: item.ClientId,

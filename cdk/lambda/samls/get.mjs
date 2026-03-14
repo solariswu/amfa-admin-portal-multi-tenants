@@ -1,7 +1,7 @@
 import { GetItemCommand } from '@aws-sdk/client-dynamodb';
 
 
-export const getResData = async (encodedId, samlurl, dynamodb, cognitoToken) => {
+export const getResData = async (encodedId, samlurl, dynamodb, cognitoToken, spInfoTable) => {
 
     if (encodedId) {
 
@@ -28,7 +28,7 @@ export const getResData = async (encodedId, samlurl, dynamodb, cognitoToken) => 
         console.log('fetch samlproxy get resData', resData)
 
         const params = {
-            TableName: process.env.AMFA_SPINFO_TABLE,
+            TableName: spInfoTable,
             Key: {
                 id: { S: `#SAML#${encodedId}` },
             },

@@ -4,10 +4,10 @@ import {
 	AdminLinkProviderForUserCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-const assignApplications = async (groups, username, cognitoISP) => {
+const assignApplications = async (groups, username, cognitoISP, userPoolId) => {
 	return Promise.all(groups.map((group) =>
 		cognitoISP.send(new AdminAddUserToGroupCommand({
-			UserPoolId: process.env.USERPOOL_ID,
+			UserPoolId: userPoolId,
 			GroupName: group,
 			Username: username
 		}))))
@@ -62,7 +62,7 @@ function generatePassword(lower, upper, number, symbol, length) {
     return finalPassword
 }
 
-export const postResData = async (data, cognitoISP) => {
+export const postResData = async (data, cognitoISP, userPoolId) => {
 	console.log('postResData Input:', data);
 	const groups = [];
 	const attributes = [];
@@ -126,7 +126,7 @@ export const postResData = async (data, cognitoISP) => {
 		...(!data.notify && { MessageAction: 'SUPPRESS' }),
 		TemporaryPassword: generatePassword(true, true, true, true, 10),//data.password,
 		UserAttributes: attributes,
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 		DesiredDeliveryMediums: ['EMAIL'],
 	}
 
@@ -137,7 +137,7 @@ export const postResData = async (data, cognitoISP) => {
 
 		if (groups && groups.length > 0) {
 			try {
-				await assignApplications(groups, item.Username, cognitoISP);
+				await assignApplications(groups, item.Username, cognitoISP, userPoolId);
 			}
 			catch (err) {
 				console.log('create user - assignApplications/groups Error:', err);
@@ -146,7 +146,7 @@ export const postResData = async (data, cognitoISP) => {
 
 		try {
 			await cognitoISP.send(new AdminLinkProviderForUserCommand({
-				UserPoolId: process.env.USERPOOL_ID,
+				UserPoolId: userPoolId,
 				DestinationUser: {
 					ProviderName: 'Cognito',
 					ProviderAttributeName: 'email',

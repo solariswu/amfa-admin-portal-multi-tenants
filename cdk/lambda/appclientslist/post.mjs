@@ -2,7 +2,7 @@
 import { CreateUserPoolClientCommand, DescribeUserPoolCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { PutItemCommand } from "@aws-sdk/client-dynamodb";
 
-const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbISP) => {
+const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbISP, spInfoTable) => {
 
     const params = {
         Item: {
@@ -20,7 +20,7 @@ const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbI
             },
         },
         ReturnConsumedCapacity: 'TOTAL',
-        TableName: process.env.AMFA_SPINFO_TABLE,
+        TableName: spInfoTable,
     };
 
     console.log('storeSPInfo Input:', params);
@@ -32,7 +32,7 @@ const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbI
     return serviceProviders;
 }
 
-export const postResData = async (data, cognitoISP, dynamodb) => {
+export const postResData = async (data, cognitoISP, dynamodb, userPoolId, spInfoTable) => {
     let CallbackURLs = [];
     let LogoutURLs = [];
 
@@ -53,7 +53,7 @@ export const postResData = async (data, cognitoISP, dynamodb) => {
 
     const params = {
         ClientName: data.clientName,
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId,
         AllowedOAuthFlowsUserPoolClient: true,
         AllowedOAuthFlows: [
             "code"
@@ -90,7 +90,7 @@ export const postResData = async (data, cognitoISP, dynamodb) => {
     const describeUserpoolRes = await cognitoISP.send(new DescribeUserPoolCommand({ UserPoolId: item.UserPoolId }));
     const hostedUIBaseUrl = `https://${describeUserpoolRes.UserPool.Domain}.auth.${process.env.AWS_REGION}.amazoncognito.com`;
 
-    await storeSPInfo(item.ClientId, data.serviceProviders, data.serviceLogoUrl ? data.serviceLogoUrl : '', dynamodb);
+    await storeSPInfo(item.ClientId, data.serviceProviders, data.serviceLogoUrl ? data.serviceLogoUrl : '', dynamodb, spInfoTable);
 
     return {
         id: item.ClientId,

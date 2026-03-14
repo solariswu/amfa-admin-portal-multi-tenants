@@ -1,10 +1,10 @@
 //AWS configurations
 import { CreateGroupCommand } from "@aws-sdk/client-cognito-identity-provider";
 
-export const postResData = async (event, cognitoISP) => {
+export const postResData = async (event, cognitoISP, userPoolId) => {
 	const params = {
 		GroupName: event.group.toLowerCase(),
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 		...(event.description && { Description: event.description }),
 	};
 

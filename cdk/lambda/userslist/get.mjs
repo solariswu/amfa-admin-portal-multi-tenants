@@ -2,20 +2,20 @@ import {
     AdminListGroupsForUserCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-export const getResData = async (item, cognitoISP) => {
+export const getResData = async (item, cognitoISP, userPoolId) => {
     let groups = null;
 
     try {
         const data = await cognitoISP.send(new AdminListGroupsForUserCommand(
             {
-                UserPoolId: process.env.USERPOOL_ID,
+                UserPoolId: userPoolId,
                 Limit: 60,
                 Username: item.Username
             }));
 
         if (data.Groups && data.Groups.length > 0) {
             groups = data.Groups.map(item => item.GroupName);
-            groups = groups.filter(item => !item.startsWith(`${process.env.USERPOOL_ID}_`));
+            groups = groups.filter(item => !item.startsWith(`${userPoolId}_`));
         }
     }
     catch (err) {

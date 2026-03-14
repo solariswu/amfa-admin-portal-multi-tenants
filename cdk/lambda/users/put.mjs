@@ -26,23 +26,23 @@ const notifyAmfa = async (userEmail, phase, otptype, newProfileValue) => {
     return amfaResponse;
 }
 
-const assignGroup = async (username, group, cognitoISP) => {
+const assignGroup = async (username, group, cognitoISP, userPoolId) => {
     return await cognitoISP.send(new AdminAddUserToGroupCommand({
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId,
         GroupName: group,
         Username: username
     }));
 }
 
-const deleteGroup = async (username, group, cognitoISP) => {
+const deleteGroup = async (username, group, cognitoISP, userPoolId) => {
     return cognitoISP.send(new AdminRemoveUserFromGroupCommand({
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId,
         GroupName: group,
         Username: username
     }));
 }
 
-const addNewGroups = async (username, existingGroups, newGroups, cognitoISP) => {
+const addNewGroups = async (username, existingGroups, newGroups, cognitoISP, userPoolId) => {
     if (newGroups && newGroups.length !== 0 && existingGroups && existingGroups.length !== 0) {
         // existing groups no need to be added
         newGroups = newGroups.filter(t => !existingGroups.includes(t))
@@ -53,10 +53,10 @@ const addNewGroups = async (username, existingGroups, newGroups, cognitoISP) => 
         return;
     }
 
-    return Promise.all(newGroups.map((group) => assignGroup(username, group, cognitoISP)))
+    return Promise.all(newGroups.map((group) => assignGroup(username, group, cognitoISP, userPoolId)))
 }
 
-const removeGroups = async (username, existingGroups, newGroups, cognitoISP) => {
+const removeGroups = async (username, existingGroups, newGroups, cognitoISP, userPoolId) => {
     if (existingGroups && existingGroups.length !== 0 && newGroups && newGroups.length !== 0) {
         // keep the groups in newGroups
         existingGroups = existingGroups.filter(t => !newGroups.includes(t))
@@ -67,22 +67,22 @@ const removeGroups = async (username, existingGroups, newGroups, cognitoISP) => 
         return;
     }
 
-    return Promise.all(existingGroups.map((group) => deleteGroup(username, group, cognitoISP)))
+    return Promise.all(existingGroups.map((group) => deleteGroup(username, group, cognitoISP, userPoolId)))
 }
 
-export const putResData = async (data, cognitoISP) => {
+export const putResData = async (data, cognitoISP, userPoolId) => {
     console.log('putResData Input:', data);
 
     const attributes = [];
 
     if (data.username) {
-        const user = await getResData(data.username, cognitoISP);
+        const user = await getResData(data.username, cognitoISP, userPoolId);
 
         // disable/enable user
         if (user.enabled !== data.enabled) {
             const params = {
                 Username: data.username,
-                UserPoolId: process.env.USERPOOL_ID,
+                UserPoolId: userPoolId,
             }
             const command = data.enabled ? new AdminEnableUserCommand(params) : new AdminDisableUserCommand(params);
 
@@ -96,7 +96,7 @@ export const putResData = async (data, cognitoISP) => {
         if (data.resetpassword) {
             const params = {
                 Username: data.username,
-                UserPoolId: process.env.USERPOOL_ID,
+                UserPoolId: userPoolId,
             }
 
             await cognitoISP.send(new AdminResetUserPasswordCommand(params));
@@ -107,8 +107,8 @@ export const putResData = async (data, cognitoISP) => {
         }
 
         // update user groups
-        await addNewGroups(data.username, user.groups, data.groups, cognitoISP);
-        await removeGroups(data.username, user.groups, data.groups, cognitoISP);
+        await addNewGroups(data.username, user.groups, data.groups, cognitoISP, userPoolId);
+        await removeGroups(data.username, user.groups, data.groups, cognitoISP, userPoolId);
         user.groups = data.groups;
 
         let changedOtpTypes = [];
@@ -200,7 +200,7 @@ export const putResData = async (data, cognitoISP) => {
             await cognitoISP.send(new AdminUpdateUserAttributesCommand({
                 UserAttributes: attributes,
                 Username: data.username,
-                UserPoolId: process.env.USERPOOL_ID
+                UserPoolId: userPoolId
             }));
         }
 
@@ -217,7 +217,7 @@ export const putResData = async (data, cognitoISP) => {
                     PreferredMfa: true
                 },
                 Username: data.username,
-                UserPoolId: process.env.USERPOOL_ID
+                UserPoolId: userPoolId
             }));
         }
 

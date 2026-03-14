@@ -1,7 +1,7 @@
 import { AdminGetUserCommand, AdminListGroupsForUserCommand } from "@aws-sdk/client-cognito-identity-provider";
 import https from "https";
 
-export const getResData = async (username, cognitoISP) => {
+export const getResData = async (username, cognitoISP, userPoolId) => {
 
 	const defaultOptions = {
 		host: `api.${process.env.AMFA_BASE_URL}`,
@@ -26,7 +26,7 @@ export const getResData = async (username, cognitoISP) => {
 
 	const params = {
 		Username: username,
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 	};
 	const item = await cognitoISP.send(new AdminGetUserCommand(params));
 
@@ -34,7 +34,7 @@ export const getResData = async (username, cognitoISP) => {
 
 	const [groupRes, licenseRes] = await Promise.allSettled([
 		cognitoISP.send(new AdminListGroupsForUserCommand({
-			UserPoolId: process.env.USERPOOL_ID,
+			UserPoolId: userPoolId,
 			Limit: 60,
 			Username: item.Username
 		})),
@@ -52,7 +52,7 @@ export const getResData = async (username, cognitoISP) => {
 
 		if (data.Groups && data.Groups.length > 0) {
 			groups = data.Groups.map(item => item.GroupName);
-			groups = groups.filter(item => !item.startsWith(`${process.env.USERPOOL_ID}_`));
+			groups = groups.filter(item => !item.startsWith(`${userPoolId}_`));
 		}
 
 	}

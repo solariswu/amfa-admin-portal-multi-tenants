@@ -68,6 +68,7 @@ export const AmfaMenu = () => {
           <Menu.ResourceItem name="importusers" />
           <Menu.ResourceItem name="groups" />
           <Menu.ResourceItem name="brandings" />
+          <Menu.ResourceItem name="settings" />
           <Menu.ResourceItem name="appclients" />
         </>
       ) : (

@@ -4,6 +4,8 @@ import {
 	CognitoIdentityProviderClient,
 } from "@aws-sdk/client-cognito-identity-provider";
 
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
+
 const cognitoISP = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION });
 
 const Limit = 60;
@@ -19,13 +21,27 @@ export const handler = async (event) => {
 	const page = parseInt(startIdx / Limit) + 1;
 
 	try {
+		// Multi-tenant: resolve tenant from X-Tenant-Id header
+		const tenantId = getTenantIdFromRequest(event);
+		if (!tenantId) {
+			return createResponse(400, { error: 'tenant_id required in request' });
+		}
+
+		const authResult = await validateTenantAccess(event, tenantId);
+		if (!authResult.authorized) {
+			return createResponse(authResult.statusCode, { error: authResult.error });
+		}
+
+		const { userPoolId } = authResult;
+		console.log(`Tenant ${tenantId}, userPoolId: ${userPoolId}`);
+
 		const pagToken = JSON.parse(event.body);
 		let NextToken = pagToken?.tokenArray[page];
 
 		const params = {
 			Limit,
 			NextToken, // tokens[1] contain the token query for page 1.
-			UserPoolId: process.env.USERPOOL_ID,
+			UserPoolId: userPoolId,
 		}
 
 		//Saving the Pagination token for each page in obj
@@ -57,7 +73,7 @@ export const handler = async (event) => {
 		return {
 			statusCode: 200,
 			headers: {
-				'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With',
+				'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With',
 				'Access-Control-Allow-Origin': '*',
 				'Access-Control-Allow-Methods': 'OPTIONS,GET,POST',
 				'Access-Control-Expose-Headers': 'Content-Range',

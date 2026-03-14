@@ -174,7 +174,7 @@ async function registerOrgWithASM(orgId, creatorEmail, requestInstallKey = null)
     awsAccountId: awsAccount,
     awsRegion: awsRegion,
     email: creatorEmail,
-    asmSecretKey: installKey,
+    awsSecretKey: installKey,
   });
 
   const response = await fetch(`${asmPortalUrl}/createServiceProvider.ap`, {

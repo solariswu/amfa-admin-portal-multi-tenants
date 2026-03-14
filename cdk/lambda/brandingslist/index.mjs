@@ -1,5 +1,5 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
-import { DynamoDBClient, ScanCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, ScanCommand, QueryCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { createResponse } from 'admin-auth';
 
 const s3ISP = new S3Client({ region: process.env.AWS_REGION });
@@ -24,7 +24,7 @@ export const handler = async (event) => {
             role = rawGroups;
         }
     }
-    
+
     if (!role) {
         return createResponse(403, { error: 'User role not found in JWT' });
     }
@@ -40,11 +40,37 @@ export const handler = async (event) => {
             };
             const data = await s3.send(new GetObjectCommand(params));
             const body = await data.Body.transformToString();
-            
+
             console.log(`Got branding from s3://${bucketName}/${key}`);
             return JSON.parse(body);
         } catch (error) {
             console.error(`Error getting branding from s3://${bucketName}/${key}:`, error.message);
+            return null;
+        }
+    }
+
+    // Helper function to get AMFA service branding from DynamoDB
+    const getAmfaBranding = async (tenantId) => {
+        try {
+            const configTable = process.env.AMFACONFIG_TABLE;
+            if (!configTable) {
+                console.warn('AMFACONFIG_TABLE not set, skipping AMFA service branding');
+                return null;
+            }
+            const result = await dynamodb.send(new GetItemCommand({
+                TableName: configTable,
+                Key: {
+                    id: { S: tenantId },
+                    configtype: { S: 'amfaBrandings' },
+                },
+            }));
+            if (result.Item?.value?.S) {
+                console.log(`Got AMFA branding from DynamoDB for tenant ${tenantId}`);
+                return JSON.parse(result.Item.value.S);
+            }
+            return null;
+        } catch (error) {
+            console.error(`Error getting AMFA branding for tenant ${tenantId}:`, error.message);
             return null;
         }
     }
@@ -130,26 +156,56 @@ export const handler = async (event) => {
         const accessibleTenants = await getAccessibleTenants();
         console.log('Accessible tenants:', accessibleTenants.length);
 
-        // Fetch tenant brandings from the shared SP Portal bucket
+        // Fetch tenant brandings from both SP Portal (S3) and AMFA Service (DynamoDB)
         const promises = accessibleTenants.map(tenant => {
-            return getResData(spPortalBucket, `branding_${tenant.id}.json`, s3ISP).then(branding => ({
+            return Promise.all([
+                // SP Portal branding (from S3)
+                getResData(spPortalBucket, `branding_${tenant.id}.json`, s3ISP),
+                // AMFA Service branding (from DynamoDB)
+                getAmfaBranding(tenant.id),
+            ]).then(([spBranding, amfaBranding]) => ({
                 tenant,
-                branding
+                spBranding,
+                amfaBranding,
             }));
         });
 
         const results = await Promise.allSettled(promises);
 
         results.forEach(result => {
-            if (result.status === 'fulfilled' && result.value.branding) {
-                resData.push({
-                    id: result.value.tenant.id,
-                    portal_type: 'End User Portal',
-                    url: process.env.SP_PORTAL_URL,
-                    tenant_id: result.value.tenant.id,
-                    tenant_name: result.value.tenant.name,
-                    ...result.value.branding
-                });
+            if (result.status === 'fulfilled') {
+                const { tenant, spBranding, amfaBranding } = result.value;
+
+                // Add SP Portal branding entry (End User Portal)
+                if (spBranding) {
+                    resData.push({
+                        id: `${tenant.id}_spportal`,
+                        portal_type: 'End User Portal',
+                        url: process.env.SP_PORTAL_URL,
+                        tenant_id: tenant.id,
+                        tenant_name: tenant.name,
+                        ...spBranding,
+                        name: tenant.name, // ensure name is always tenant name
+                    });
+                }
+
+                // Add AMFA Service branding entry (Login Service Portal)
+                if (amfaBranding) {
+                    resData.push({
+                        id: `${tenant.id}_amfa`,
+                        portal_type: 'Login Service Portal',
+                        url: process.env.SP_PORTAL_URL,
+                        tenant_id: tenant.id,
+                        tenant_name: tenant.name,
+                        // Map AMFA branding fields to the display fields used by BrandingList
+                        app_login_logo_url: amfaBranding.logo_url,
+                        fav_icon_url: amfaBranding.favicon_url,
+                        brand_base_color: amfaBranding.brand_base_color,
+                        // Store original AMFA branding data for editing
+                        ...amfaBranding,
+                       name: amfaBranding.service_name || tenant.name,
+                    });
+                }
             }
         });
 

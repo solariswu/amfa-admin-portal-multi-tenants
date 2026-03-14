@@ -3,16 +3,16 @@
 import { DeleteUserPoolClientCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { DeleteItemCommand } from '@aws-sdk/client-dynamodb';
 
-export const deleteResData = async (ClientId, cognitoISP, dynamodb) => {
+export const deleteResData = async (ClientId, cognitoISP, dynamodb, userPoolId, spInfoTable) => {
 	const params = {
 		ClientId,
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 	};
 
 	const result = await cognitoISP.send(new DeleteUserPoolClientCommand(params));
 	try {
 		await dynamodb.send(new DeleteItemCommand({
-			TableName: process.env.AMFA_SPINFO_TABLE,
+			TableName: spInfoTable,
 			Key: {
 				id: { S: '#OIDC#' + ClientId },
 			},

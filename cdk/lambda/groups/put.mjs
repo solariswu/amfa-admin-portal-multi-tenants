@@ -2,11 +2,11 @@ import {
 	UpdateGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-export const putResData = async (data, cognitoISP) => {
+export const putResData = async (data, cognitoISP, userPoolId) => {
 	console.log('putResData Input:', data);
 
 	const params = {
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 		GroupName: data.id.toLowerCase(),
 		...(data.description && { Description: data.description }),
 		...(data.precedence && { Precedence: data.precedence }),

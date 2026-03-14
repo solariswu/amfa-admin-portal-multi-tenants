@@ -1,6 +1,6 @@
 import { PutItemCommand } from "@aws-sdk/client-dynamodb";
 
-const storeSPInfo = async (payload, dynamodbISP) => {
+const storeSPInfo = async (payload, dynamodbISP, spInfoTable) => {
 
     const params = {
         Item: {
@@ -21,7 +21,7 @@ const storeSPInfo = async (payload, dynamodbISP) => {
             }
         },
         ReturnConsumedCapacity: 'TOTAL',
-        TableName: process.env.AMFA_SPINFO_TABLE,
+        TableName: spInfoTable,
     };
 
     console.log('storeSPInfo Input:', params);
@@ -33,11 +33,11 @@ const storeSPInfo = async (payload, dynamodbISP) => {
     return payload;
 }
 
-export const putResData = async (payload, dynamodb) => {
+export const putResData = async (payload, dynamodb, spInfoTable) => {
 
     console.log('samls putResData Input:', payload);
 
-    return await storeSPInfo(payload, dynamodb);
+    return await storeSPInfo(payload, dynamodb, spInfoTable);
 }
 
 export default putResData;

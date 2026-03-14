@@ -64,13 +64,13 @@ export const OrganizationCreate = () => {
   const redirect = useRedirect();
   const [loading, setLoading] = useState(true);
   const [canCreate, setCanCreate] = useState(false);
-  
+
   // Install key dialog state
   const [installKeyDialogOpen, setInstallKeyDialogOpen] = useState(false);
   const [installKeyValue, setInstallKeyValue] = useState('');
   const [pendingData, setPendingData] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  
+
   const [create] = useCreate();
 
   useEffect(() => {
@@ -116,7 +116,7 @@ export const OrganizationCreate = () => {
           const errorBody = error?.body || error;
           const errorCode = errorBody?.code;
           const errorMessage = errorBody?.message || error?.message || '';
-          
+
           if (errorCode === 'ASM_INSTALL_KEY_REQUIRED' || errorMessage.includes('ASM_INSTALL_KEY_REQUIRED')) {
             // Store the pending data and show install key dialog
             setPendingData(data);
@@ -131,9 +131,9 @@ export const OrganizationCreate = () => {
 
   const handleInstallKeySubmit = async () => {
     if (!installKeyValue.trim() || !pendingData) return;
-    
+
     setSubmitting(true);
-    
+
     // Re-submit with install key included
     create(
       'organizations',
@@ -177,7 +177,7 @@ export const OrganizationCreate = () => {
             const errorBody = error?.body || error;
             const errorCode = errorBody?.code;
             const errorMessage = errorBody?.message || error?.message || '';
-            
+
             if (errorCode === 'ASM_INSTALL_KEY_REQUIRED' || errorMessage.includes('ASM_INSTALL_KEY_REQUIRED')) {
               // Will be handled by transform + save pattern below
             } else {
@@ -251,7 +251,7 @@ export const OrganizationCreate = () => {
         </DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
-            The ASM Install Key has not been configured yet. This is a one-time setup required to register 
+            The ASM Install Key has not been configured yet. This is a one-time setup required to register
             organizations with the aPersona ASM portal. The key will be securely stored for future use.
           </DialogContentText>
           <TextField

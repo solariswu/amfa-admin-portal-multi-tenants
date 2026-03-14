@@ -4,7 +4,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 
 
-export const deleteResData = async (endcodedId, samlurl, cognitoToken, reloadUrl, dynamodb) => {
+export const deleteResData = async (endcodedId, samlurl, cognitoToken, reloadUrl, dynamodb, spInfoTable) => {
 
     if (endcodedId) {
 
@@ -41,7 +41,7 @@ export const deleteResData = async (endcodedId, samlurl, cognitoToken, reloadUrl
 
         try {
             await dynamodb.send(new DeleteItemCommand({
-                TableName: process.env.AMFA_SPINFO_TABLE,
+                TableName: spInfoTable,
                 Key: {
                     id: { S: '#SAML#' + endcodedId },
                 },

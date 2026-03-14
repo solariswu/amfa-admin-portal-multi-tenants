@@ -7,6 +7,8 @@ import {
   ListUsersInGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
+import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
+
 import postResData from "./post.mjs";
 import getResData from "./get.mjs";
 
@@ -25,6 +27,20 @@ export const handler = async (event) => {
   let errMsg = { type: "exception", message: "Service Error" };
 
   try {
+    // Multi-tenant: resolve tenant from X-Tenant-Id header
+    const tenantId = getTenantIdFromRequest(event);
+    if (!tenantId) {
+      return createResponse(400, { error: 'tenant_id required in request' });
+    }
+
+    const authResult = await validateTenantAccess(event, tenantId);
+    if (!authResult.authorized) {
+      return createResponse(authResult.statusCode, { error: authResult.error });
+    }
+
+    const { userPoolId } = authResult;
+    console.log(`Tenant ${tenantId}, userPoolId: ${userPoolId}`);
+
     if (
       event.requestContext.http.method === "POST" &&
       (!event.queryStringParameters || !event.queryStringParameters.page)
@@ -32,13 +48,13 @@ export const handler = async (event) => {
       // invite new user
       const body = JSON.parse(event.body);
       console.log("POST data: ", body);
-      const postResult = await postResData(body.data, cognitoISP);
+      const postResult = await postResData(body.data, cognitoISP, userPoolId);
 
       return {
         statusCode: 200,
         headers: {
           "Access-Control-Allow-Headers":
-            "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+            "Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With",
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
           "Access-Control-Expose-Headers": "Content-Range",
@@ -73,7 +89,7 @@ export const handler = async (event) => {
           statusCode: 200,
           headers: {
             "Access-Control-Allow-Headers":
-              "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+              "Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
             "Access-Control-Expose-Headers": "Content-Range",
@@ -103,7 +119,7 @@ export const handler = async (event) => {
       if (Object.keys(filter).includes("groups")) {
         do {
           params = {
-            UserPoolId: process.env.USERPOOL_ID,
+            UserPoolId: userPoolId,
             Limit: limit - listUsersData.Users.length, // Number of users to display per page
             GroupName: filter["groups"],
             ...(PaginationToken && { NextToken: PaginationToken }),
@@ -132,7 +148,7 @@ export const handler = async (event) => {
         // Get total count of user
         const describeData = await cognitoISP.send(
           new DescribeUserPoolCommand({
-            UserPoolId: process.env.USERPOOL_ID,
+            UserPoolId: userPoolId,
           }),
         );
         console.log("describeUserpool result", describeData);
@@ -156,7 +172,7 @@ export const handler = async (event) => {
 
         do {
           params = {
-            UserPoolId: process.env.USERPOOL_ID,
+            UserPoolId: userPoolId,
             Limit: limit - listUsersData.Users.length, // No of users to display per page
             ...(PaginationToken && { PaginationToken: PaginationToken }), // tokens[1] contain the token query for page 1.
             ...(filterString && { Filter: filterString }),
@@ -203,7 +219,7 @@ export const handler = async (event) => {
 
       try {
         const transform = async (users) => {
-          return Promise.all(users.map((item) => getResData(item, cognitoISP)));
+          return Promise.all(users.map((item) => getResData(item, cognitoISP, userPoolId)));
         };
         resData = await transform(listUsersData.Users);
       } catch (error) {
@@ -224,7 +240,7 @@ export const handler = async (event) => {
         statusCode: 200,
         headers: {
           "Access-Control-Allow-Headers":
-            "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+            "Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With",
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
           "Access-Control-Expose-Headers": "Content-Range",
@@ -278,7 +294,7 @@ export const handler = async (event) => {
     statusCode: 500,
     headers: {
       "Access-Control-Allow-Headers":
-        "Content-Type,Authorization,X-Api-Key,Content-Range,X-Requested-With",
+        "Content-Type,Authorization,X-Api-Key,X-Tenant-Id,Content-Range,X-Requested-With",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "OPTIONS,GET,POST",
       "Access-Control-Expose-Headers": "Content-Range",

@@ -26,7 +26,8 @@ export const handler = async (event) => {
     }
 
     const { userPoolId } = authResult;
-    console.log(`Authorized access for tenant ${tenantId}, userPoolId: ${userPoolId}`);
+    const importJobTable = `amfa-importjobid-${tenantId}`;
+    console.log(`Authorized access for tenant ${tenantId}, userPoolId: ${userPoolId}, importJobTable: ${importJobTable}`);
 
     if (
       event.requestContext.http.method === "POST" &&
@@ -41,6 +42,7 @@ export const handler = async (event) => {
         tenantId,
         dynamoDBClient,
         s3Client,
+        importJobTable,
       );
       return postResult;
     } else {
@@ -99,7 +101,7 @@ export const handler = async (event) => {
 
       do {
         const scanParams = {
-          TableName: process.env.IMPORTUSERS_JOB_ID_TABLE,
+          TableName: importJobTable,
           ConsistentRead: true,
           ...(PaginationToken && { ExclusiveStartKey: PaginationToken }),
           FilterExpression,

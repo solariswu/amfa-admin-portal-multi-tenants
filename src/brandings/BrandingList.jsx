@@ -66,12 +66,12 @@ export const BrandingList = (props) => {
           <FunctionField
             label="Portal Type"
             render={(record) => {
-              if (record.portal_type === 'Admin Portal') {
-                return <Chip label="Admin Portal" color="primary" size="small" />;
+              if (record.portal_type === 'Login Service Portal') {
+                return <Chip label="Login Service Portal" color="warning" size="small" />;
               }
               return (
                 <Chip 
-                  label={`End User Portal • ${record.tenant_id || record.id}`} 
+                  label="End User Portal"
                   color="info" 
                   size="small" 
                   variant="outlined"

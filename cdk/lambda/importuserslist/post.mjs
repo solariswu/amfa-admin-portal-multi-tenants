@@ -20,6 +20,7 @@ const genImportUsersJob = async (
   notify,
   totalusernumber,
   dynamodb,
+  importJobTable,
 ) => {
   console.log("generating user import job id for userpool id:", userPoolId);
 
@@ -54,7 +55,7 @@ const genImportUsersJob = async (
       },
     },
     ReturnConsumedCapacity: "TOTAL",
-    TableName: process.env.IMPORTUSERS_JOB_ID_TABLE,
+    TableName: importJobTable,
   };
 
   console.log ("params:", params)
@@ -65,7 +66,7 @@ const genImportUsersJob = async (
   return jobid;
 };
 
-export const postResData = async (data, userpoolId, tenantId, dynamodbISP, s3) => {
+export const postResData = async (data, userpoolId, tenantId, dynamodbISP, s3, importJobTable) => {
   try {
     const jobid = await genImportUsersJob(
       userpoolId,
@@ -73,6 +74,7 @@ export const postResData = async (data, userpoolId, tenantId, dynamodbISP, s3) =
       data.notify,
       data.totalusers,
       dynamodbISP,
+      importJobTable,
     );
 
     // start worker lambda with event type
@@ -97,7 +99,7 @@ export const postResData = async (data, userpoolId, tenantId, dynamodbISP, s3) =
         userpoolId,
         tenantId,
         admin: data.admin,
-        tableName: process.env.IMPORTUSERS_JOB_ID_TABLE,
+        tableName: importJobTable,
       }),
     });
 

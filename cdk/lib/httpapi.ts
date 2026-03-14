@@ -308,6 +308,7 @@ export class SSOApiGateway {
       "appclients",
       "admins",
       "admingroups",
+      "importusers",
     ];
 
     this.imoprtUsersJobsS3Bucket = new Bucket(
@@ -388,7 +389,7 @@ export class SSOApiGateway {
       }
     });
 
-    const samlsListLambda = this.createAmfaSamlSpsLambda("samlslist");
+    const samlsListLambda = this.createAmfaSamlSpsLambda("samlslist", authLayer);
     // 👇 add route for GET /resource
     this.api.addRoutes({
       path: "/samls",
@@ -399,7 +400,7 @@ export class SSOApiGateway {
       ),
       authorizer: this.authorizor,
     });
-    const samlsLambda = this.createAmfaSamlSpsLambda("samls");
+    const samlsLambda = this.createAmfaSamlSpsLambda("samls", authLayer);
     // 👇 add route for CRUD /resource/id
     this.api.addRoutes({
       path: "/samls/{id}",
@@ -469,6 +470,18 @@ export class SSOApiGateway {
       integration: new HttpLambdaIntegration(
         "smtpconfig-integration",
         smtplambda,
+      ),
+      authorizer: this.authorizor,
+    });
+
+    // settings api (per-tenant settings: amfaConfigs + amfaLegals)
+    const settingsLambda = this.createSettingsLambda(authLayer);
+    this.api.addRoutes({
+      path: "/settings/{id}",
+      methods: [HttpMethod.GET, HttpMethod.PUT],
+      integration: new HttpLambdaIntegration(
+        "settings-integration",
+        settingsLambda,
       ),
       authorizer: this.authorizor,
     });
@@ -727,16 +740,17 @@ export class SSOApiGateway {
     return lambda;
   }
 
-  private createAmfaSamlSpsLambda(lambdaName: string) {
+  private createAmfaSamlSpsLambda(lambdaName: string, authLayer?: LayerVersion) {
     const lambda = new Function(this.scope, lambdaName, {
       runtime: Runtime.NODEJS_LATEST,
       handler: "index.handler",
       code: Code.fromAsset(
         path.join(__dirname, `/../lambda/${lambdaName}/dist`),
       ),
+      ...(authLayer && { layers: [authLayer] }),
       environment: {
         AMFA_BASE_URL: this.amfaBaseUrl,
-        AMFA_SPINFO_TABLE: "amfa-spinfo",
+        AMFATENANT_TABLE,
         SAMLPROXY_API_URL: samlproxy_api_url,
         SAMLPROXY_RELOAD_URL: samlproxy_reload_url,
         SAMLPROXY_CLEAN_URL: samlproxy_clean_url,
@@ -752,6 +766,7 @@ export class SSOApiGateway {
             actions: [
               "dynamodb:GetItem",
               "dynamodb:PutItem",
+              "dynamodb:Query",
               "dynamodb:Scan",
               "dynamodb:DeleteItem",
             ],
@@ -1103,7 +1118,6 @@ export class SSOApiGateway {
           AMFA_BASE_URL: this.amfaBaseUrl,
           AMFA_SPINFO_TABLE: "amfa-spinfo",
           AMFATENANT_TABLE,
-          IMPORTUSERS_JOB_ID_TABLE: "amfa-importjobid",
           IMPORTUSERS_WORKER_LAMBDA: this.importUsersWorkerLambda.functionName,
           IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
         },
@@ -1126,7 +1140,6 @@ export class SSOApiGateway {
           USERPOOL_ID: userPoolId,
           AMFA_BASE_URL: this.amfaBaseUrl,
           AMFA_SPINFO_TABLE: "amfa-spinfo",
-          IMPORTUSERS_JOB_ID_TABLE: "amfa-importjobid",
           IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
           ACCOUNT_ID: this.account || "",
           ASM_PORTAL_URL: process.env.ASM_PORTAL_URL || "",
@@ -1163,8 +1176,7 @@ export class SSOApiGateway {
         environment: {
           USERPOOL_ID: userPoolId,
           AMFA_BASE_URL: this.amfaBaseUrl,
-          AMFA_SPINFO_TABLE: "amfa-spinfo",
-          IMPORTUSERS_JOB_ID_TABLE: "amfa-importjobid",
+          AMFATENANT_TABLE,
           IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
           ACCOUNT_ID: this.account || "",
         },
@@ -1227,6 +1239,54 @@ export class SSOApiGateway {
     return lambda;
   }
 
+  private createSettingsLambda(authLayer: LayerVersion) {
+    const lambdaName = "settings";
+
+    const lambda = new Function(this.scope, lambdaName, {
+      runtime: Runtime.NODEJS_LATEST,
+      handler: "index.handler",
+      code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}`)),
+      layers: [authLayer],
+      environment: {
+        AMFACONFIG_TABLE,
+        AMFATENANT_TABLE,
+      },
+      timeout: Duration.minutes(5),
+    });
+
+    lambda.role?.attachInlinePolicy(
+      new Policy(this.scope, `${lambdaName}-policy-dynamo`, {
+        statements: [
+          new PolicyStatement({
+            resources: [
+              this.tableNameToArn(AMFACONFIG_TABLE),
+              this.tableNameToArn(AMFATENANT_TABLE),
+              `${this.tableNameToArn(AMFATENANT_TABLE)}/index/*`,
+            ],
+            actions: [
+              "dynamodb:GetItem",
+              "dynamodb:PutItem",
+              "dynamodb:Query",
+            ],
+          }),
+        ],
+      }),
+    );
+
+    lambda.role?.attachInlinePolicy(
+      new Policy(this.scope, `${lambdaName}-passrole-policy`, {
+        statements: [
+          new PolicyStatement({
+            resources: ["*"],
+            actions: ["iam:PassRole"],
+          }),
+        ],
+      }),
+    );
+
+    return lambda;
+  }
+
   private createBrandingLambda(lambdaName: string, authLayer: LayerVersion) {
     // Multi-tenant branding Lambda - tenant_id comes from request
     const lambda = new Function(this.scope, lambdaName, {
@@ -1236,6 +1296,7 @@ export class SSOApiGateway {
       layers: [authLayer],
       environment: {
         AMFATENANT_TABLE,
+        AMFACONFIG_TABLE,
         SPPORTAL_BUCKET_PREFIX: `${this.account || ""}-${service_name}`,
         ADMINPORTAL_BUCKETNAME: `${this.account || ""}-${this.region || ""}-adminportal-${service_name}-web`,
         ADMINPORTAL_DISTRIBUTION_ID:

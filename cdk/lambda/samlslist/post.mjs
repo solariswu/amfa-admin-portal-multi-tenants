@@ -1,7 +1,7 @@
 import xml2js from 'xml2js';
 import { PutItemCommand } from '@aws-sdk/client-dynamodb';
 
-const storeSPInfo = async (payload, dynamodbISP) => {
+const storeSPInfo = async (payload, dynamodbISP, spInfoTable) => {
 
     const params = {
         Item: {
@@ -22,7 +22,7 @@ const storeSPInfo = async (payload, dynamodbISP) => {
             }
         },
         ReturnConsumedCapacity: 'TOTAL',
-        TableName: process.env.AMFA_SPINFO_TABLE,
+        TableName: spInfoTable,
     };
 
     console.log('storeSPInfo Input:', params);
@@ -86,7 +86,7 @@ const getEntityId = async (xmlUrl) => {
 const samlReloadUrl = process.env.SAMLPROXY_RELOAD_URL;
 const samlCleanUrl = process.env.SAMLPROXY_CLEAN_URL;
 
-export const postResData = async (payload, samlurl, dynamodbISP, cognitoISP, cognitoToken) => {
+export const postResData = async (payload, samlurl, dynamodbISP, cognitoISP, cognitoToken, spInfoTable) => {
 
     console.log('postResData Input:', payload);
 
@@ -168,7 +168,7 @@ export const postResData = async (payload, samlurl, dynamodbISP, cognitoISP, cog
                 logoUrl: payload.logoUrl,
                 serviceUrl: payload.serviceUrl,
                 released: payload.released,
-            }, dynamodbISP);
+            }, dynamodbISP, spInfoTable);
 
             const data = {
                 id: btoa(entityId),

@@ -15,6 +15,7 @@ import importuser from './importusers';
 import tenants from "./tenants";
 import organizations from "./organizations";
 import brandings from "./brandings";
+import settings from "./settings";
 import admins from "./admins";
 
 import authProvider from "./Component/authProvider/authProvider";
@@ -97,6 +98,7 @@ export const App = () => (
         <Resource options={{ label: 'User Groups' }} name="groups" {...groups} />
         <Resource name="admins" {...admins} />
         <Resource name="brandings" {...brandings} />
+        <Resource name="settings" {...settings} />
         <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
         {/* <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} /> */}
         {/* <CustomRoutes>

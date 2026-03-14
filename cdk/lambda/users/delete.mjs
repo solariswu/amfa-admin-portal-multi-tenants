@@ -1,6 +1,6 @@
 import { AdminDeleteUserCommand, AdminGetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
 
-export const deleteResData = async (data, cognitoISP, admin) => {
+export const deleteResData = async (data, cognitoISP, admin, userPoolId) => {
     console.log('deleteResData Input:', data);
 
     if (!data || !data.id) {
@@ -11,14 +11,14 @@ export const deleteResData = async (data, cognitoISP, admin) => {
 
     const user = await cognitoISP.send(new AdminGetUserCommand({
         Username: data.id,
-        UserPoolId: process.env.USERPOOL_ID
+        UserPoolId: userPoolId
     }))
 
     console.log('get user before delete User:', user);
 
     const result = await cognitoISP.send(new AdminDeleteUserCommand({
         Username: data.id,
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId,
     }));
     console.log('deleteResData Output:', result);
 

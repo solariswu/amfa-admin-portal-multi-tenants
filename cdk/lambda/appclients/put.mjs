@@ -6,7 +6,7 @@ import {
 
 import { PutItemCommand } from "@aws-sdk/client-dynamodb";
 
-const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbISP) => {
+const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbISP, spInfoTable) => {
 
     const params = {
         Item: {
@@ -24,7 +24,7 @@ const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbI
             },
         },
         ReturnConsumedCapacity: 'TOTAL',
-        TableName: process.env.AMFA_SPINFO_TABLE,
+        TableName: spInfoTable,
     };
 
     console.log('storeSPInfo Input:', params);
@@ -36,7 +36,7 @@ const storeSPInfo = async (clientId, serviceProviders, serviceLogoUrl, dynamodbI
     return serviceProviders;
 }
 
-export const putResData = async (data, cognitoISP, dynamodb) => {
+export const putResData = async (data, cognitoISP, dynamodb, userPoolId, spInfoTable) => {
     console.log('putResData Input:', data);
 
     const {
@@ -49,7 +49,7 @@ export const putResData = async (data, cognitoISP, dynamodb) => {
 
     let params = {
         ClientId: id,
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId,
     };
 
     const describeRes = await cognitoISP.send(new DescribeUserPoolClientCommand(params));
@@ -85,7 +85,7 @@ export const putResData = async (data, cognitoISP, dynamodb) => {
     delete item.ClientSecret;
 
     params = {
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId,
         ...item,
     }
 
@@ -147,7 +147,7 @@ export const putResData = async (data, cognitoISP, dynamodb) => {
             }
         }
 
-        await storeSPInfo(item.ClientId, serviceProviders, serviceLogoUrl, dynamodb);
+        await storeSPInfo(item.ClientId, serviceProviders, serviceLogoUrl, dynamodb, spInfoTable);
 
         return {
             id: item.ClientId,

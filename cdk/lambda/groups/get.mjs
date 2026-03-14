@@ -2,11 +2,11 @@
 //AWS configurations
 import { GetGroupCommand } from "@aws-sdk/client-cognito-identity-provider";
 
-export const getResData = async (GroupName, cognitoISP) => {
+export const getResData = async (GroupName, cognitoISP, userPoolId) => {
 
 	const params = {
 		GroupName,
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId,
 	};
 
 	const data = await cognitoISP.send(new GetGroupCommand(params));
