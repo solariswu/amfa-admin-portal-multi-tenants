@@ -270,6 +270,15 @@ const dataProvider = {
       })
       .catch(handleError);
   },
+  getMany: (resource, params) => {
+    return Promise.all(
+      params.ids.map((id) =>
+        dataProvider.getOne(resource, { id }).catch(() => ({ data: { id } }))
+      )
+    ).then((results) => ({
+      data: results.map((r) => r.data),
+    }));
+  },
   getManyReference: (resource, params) => {
     const { page, perPage } = params.pagination;
     const { field, order } = params.sort;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Show,
   SimpleShowLayout,
@@ -12,8 +12,21 @@ import {
   useGetList,
   Link,
 } from 'react-admin';
-import { Box, Card, CardContent, Typography, Divider } from '@mui/material';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Divider,
+  Tabs,
+  Tab,
+} from '@mui/material';
+import InfoIcon from '@mui/icons-material/Info';
+import SettingsIcon from '@mui/icons-material/Settings';
+import PaletteIcon from '@mui/icons-material/Palette';
 import { TenantAdminList } from './TenantAdminList';
+import { TenantSettingsTab } from './TenantSettingsTab';
+import { TenantBrandingTab } from './TenantBrandingTab';
 
 /**
  * Show Actions with Delete button in upper right.
@@ -45,10 +58,80 @@ const ShowActions = () => {
 };
 
 /**
+ * Simple TabPanel component (avoids @mui/lab dependency)
+ */
+const TabPanel = ({ children, value, index, ...other }) => (
+  <div
+    role="tabpanel"
+    hidden={value !== index}
+    id={`tenant-tabpanel-${index}`}
+    aria-labelledby={`tenant-tab-${index}`}
+    {...other}
+  >
+    {value === index && <Box sx={{ pt: 2 }}>{children}</Box>}
+  </div>
+);
+
+/**
+ * Details tab content - tenant info and administrators
+ */
+const TenantDetailsTab = ({ orgMap }) => {
+  const record = useRecordContext();
+
+  return (
+    <>
+      <Card>
+        <CardContent>
+          <Typography variant="h5" gutterBottom>
+            Tenant Details
+          </Typography>
+          <Divider sx={{ my: 2 }} />
+
+          <SimpleShowLayout>
+            <TextField source="id" label="Tenant ID" />
+            <TextField source="name" label="Tenant Name" />
+            <TextField source="contact" label="Contact Email" />
+            <FunctionField
+              label="IT Svc Org"
+              render={record => {
+                const orgName = orgMap[record.org_id] || record.org_id || 'N/A';
+                return record.org_id ? (
+                  <Link to={`/organizations/${record.org_id}/show`}>
+                    {orgName}
+                  </Link>
+                ) : orgName;
+              }}
+            />
+            <FunctionField
+              label="End User Service Portal URL"
+              render={record => record.endUserSpUrl ? (
+                <a href={record.endUserSpUrl} target="_blank" rel="noreferrer">
+                  {record.endUserSpUrl}
+                </a>
+              ) : '---'}
+            />
+          </SimpleShowLayout>
+        </CardContent>
+      </Card>
+
+      {/* Tenant Administrators Section */}
+      {record?.id && (
+        <TenantAdminList tenantId={record.id} orgId={record.org_id} />
+      )}
+    </>
+  );
+};
+
+/**
  * TenantShow Component
- * Displays detailed view of a tenant with delete button for SA/SPA.
+ * Displays detailed view of a tenant with tabbed layout:
+ * - Details: basic info + administrators
+ * - Settings: read-only view of tenant settings
+ * - Branding: read-only view of login service + end user portal branding
  */
 export const TenantShow = () => {
+  const [tabIndex, setTabIndex] = useState(0);
+
   // Load organizations to display org name
   const { data: organizations } = useGetList('organizations', {
     pagination: { page: 1, perPage: 1000 },
@@ -62,55 +145,56 @@ export const TenantShow = () => {
     }, {});
   }, [organizations]);
 
+  const handleTabChange = (event, newValue) => {
+    setTabIndex(newValue);
+  };
+
   return (
     <Show actions={<ShowActions />}>
-      <Box p={3}>
-        <Card>
-          <CardContent>
-            <Typography variant="h5" gutterBottom>
-              Tenant Details
-            </Typography>
-            <Divider sx={{ my: 2 }} />
+      <Box sx={{ px: 3, pt: 1, pb: 3 }}>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs
+            value={tabIndex}
+            onChange={handleTabChange}
+            aria-label="Tenant show tabs"
+            variant="standard"
+          >
+            <Tab
+              icon={<InfoIcon />}
+              iconPosition="start"
+              label="Details"
+              id="tenant-tab-0"
+              aria-controls="tenant-tabpanel-0"
+            />
+            <Tab
+              icon={<SettingsIcon />}
+              iconPosition="start"
+              label="Settings"
+              id="tenant-tab-1"
+              aria-controls="tenant-tabpanel-1"
+            />
+            <Tab
+              icon={<PaletteIcon />}
+              iconPosition="start"
+              label="Branding"
+              id="tenant-tab-2"
+              aria-controls="tenant-tabpanel-2"
+            />
+          </Tabs>
+        </Box>
 
-            <SimpleShowLayout>
-              <TextField source="id" label="Tenant ID" />
-              <TextField source="name" label="Tenant Name" />
-              <TextField source="contact" label="Contact Email" />
-              <FunctionField
-                label="IT Svc Org"
-                render={record => {
-                  const orgName = orgMap[record.org_id] || record.org_id || 'N/A';
-                  return record.org_id ? (
-                    <Link to={`/organizations/${record.org_id}/show`}>
-                      {orgName}
-                    </Link>
-                  ) : orgName;
-                }}
-              />
-              <FunctionField
-                label="End User Service Portal URL"
-                render={record => record.endUserSpUrl ? (
-                  <a href={record.endUserSpUrl} target="_blank" rel="noreferrer">
-                    {record.endUserSpUrl}
-                  </a>
-                ) : '---'}
-              />
-            </SimpleShowLayout>
-          </CardContent>
-        </Card>
+        <TabPanel value={tabIndex} index={0}>
+          <TenantDetailsTab orgMap={orgMap} />
+        </TabPanel>
 
-        {/* Tenant Administrators Section */}
-        <TenantAdminListWrapper />
+        <TabPanel value={tabIndex} index={1}>
+          <TenantSettingsTab />
+        </TabPanel>
+
+        <TabPanel value={tabIndex} index={2}>
+          <TenantBrandingTab />
+        </TabPanel>
       </Box>
     </Show>
   );
-};
-
-/**
- * Wrapper to extract tenant ID and org ID from record context for TenantAdminList
- */
-const TenantAdminListWrapper = () => {
-  const record = useRecordContext();
-  if (!record?.id) return null;
-  return <TenantAdminList tenantId={record.id} orgId={record.org_id} />;
 };

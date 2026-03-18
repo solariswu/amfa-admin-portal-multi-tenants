@@ -287,6 +287,7 @@ export const handler = async (event) => {
               .toLowerCase();
 
             if (result.status === "rejected") {
+              console.error(`FAILED to create user ${userEmail}:`, result.reason?.name, result.reason?.message);
               userGroups[i + idx] = [];
               return (result.username = userEmail);
             } else if (result.status === "fulfilled") {

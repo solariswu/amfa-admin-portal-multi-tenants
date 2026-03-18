@@ -19,6 +19,7 @@ import {
   CreateUserPoolClientCommand,
   CreateUserPoolDomainCommand,
   CreateIdentityProviderCommand,
+  CreateGroupCommand,
   DescribeUserPoolCommand,
   UpdateUserPoolCommand,
   SetUserPoolMfaConfigCommand,
@@ -127,7 +128,11 @@ export async function provisionCognitoResources(tenantData, asmData) {
   await attachLambdaTriggers(userPoolResult.userPoolId, tenantId);
   console.log(`[Cognito] Lambda triggers attached`);
 
-  // 8. Return all resource information
+  // 8. Create User Groups from amfaPolicies apiKeys
+  await createUserGroupsFromPolicies(userPoolResult.userPoolId, asmData.apiKeys);
+  console.log(`[Cognito] User groups created from amfaPolicies`);
+
+  // 9. Return all resource information
   return {
     userPoolId: userPoolResult.userPoolId,
     userPoolArn: userPoolResult.userPoolArn,
@@ -163,7 +168,7 @@ async function createUserPool(tenantId, tenantName) {
     },
     MfaConfiguration: "OFF", // Will be set to OPTIONAL after creation
     AutoVerifiedAttributes: ["email"],
-    UsernameAttributes: ["email"],
+    AliasAttributes: ["email"],
     UsernameConfiguration: {
       CaseSensitive: false,
     },
@@ -356,7 +361,7 @@ async function createOIDCProvider(
  * (This client existed before - keeping it as is)
  */
 async function createSAMLClient(userPoolId, tenantId, tenantName) {
-  const clientName = `${tenantName}-saml-client`;
+  const clientName = "amfasys_samlClient";
   const rootDomain = process.env.ROOT_DOMAIN_NAME;
 
   const command = new CreateUserPoolClientCommand({
@@ -561,6 +566,55 @@ async function grantCognitoInvokePermission(lambdaArn, userPoolId, tenantId, tri
     } else {
       console.warn(`[Cognito] Failed to grant invoke permission for ${triggerName}:`, error.message);
       // Don't throw - triggers can still work if permission was previously granted
+    }
+  }
+}
+
+/**
+ * Create Cognito User Groups from amfaPolicies apiKeys.
+ *
+ * Extracts group names from ASM apiKeys and creates a Cognito group
+ * for each user-group policy. Filters out:
+ *   - Keys containing a "-" character (e.g. "pwd-reset", "self-service", "user-registration")
+ *   - The "default" key (fallback policy, not a real user group)
+ *
+ * @param {string} userPoolId - The Cognito UserPool ID
+ * @param {Object} apiKeys - API keys from ASM registration (e.g. { "admin": "admin-5-xxx", "user": "user-100-yyy", ... })
+ */
+async function createUserGroupsFromPolicies(userPoolId, apiKeys) {
+  if (!apiKeys || typeof apiKeys !== 'object') {
+    console.warn("[Cognito] No apiKeys provided, skipping user group creation");
+    return;
+  }
+
+  const groupNames = Object.keys(apiKeys).filter(
+    (name) => !name.includes("-") && name !== "default"
+  );
+
+  if (groupNames.length === 0) {
+    console.log("[Cognito] No user group policies found in apiKeys, skipping group creation");
+    return;
+  }
+
+  console.log(`[Cognito] Creating ${groupNames.length} user groups: ${groupNames.join(", ")}`);
+
+  for (const groupName of groupNames) {
+    try {
+      await cognito.send(
+        new CreateGroupCommand({
+          UserPoolId: userPoolId,
+          GroupName: groupName,
+          Description: `Auto-created from amfaPolicies during tenant provisioning`,
+        })
+      );
+      console.log(`[Cognito]   ✓ Group '${groupName}' created`);
+    } catch (error) {
+      if (error.name === "GroupExistsException") {
+        console.log(`[Cognito]   ⚠ Group '${groupName}' already exists, skipping`);
+      } else {
+        console.warn(`[Cognito]   ✗ Failed to create group '${groupName}':`, error.message);
+        // Non-fatal: continue creating other groups
+      }
     }
   }
 }

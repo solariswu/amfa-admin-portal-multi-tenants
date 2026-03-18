@@ -1,6 +1,9 @@
 import {
   AdminCreateUserCommand,
   AdminAddUserToGroupCommand,
+  AdminListGroupsForUserCommand,
+  AdminRemoveUserFromGroupCommand,
+  AdminGetUserCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
 import {
@@ -259,6 +262,156 @@ async function registerTAAdminWithASM(email, tenantId, requestedBy) {
   return result;
 }
 
+/**
+ * Look up the orgId for a given tenantId from DynamoDB.
+ * @param {string} tenantId
+ * @returns {Promise<string|null>} orgId or null
+ */
+async function getTenantOrgId(tenantId) {
+  try {
+    const queryResult = await dynamodb.send(new QueryCommand({
+      TableName: "amfa-tenanttable",
+      KeyConditionExpression: "id = :id AND begins_with(sk, :sk_prefix)",
+      ExpressionAttributeValues: {
+        ":id": { S: `TENANT#${tenantId}` },
+        ":sk_prefix": { S: "TENANT#" },
+      },
+      ProjectionExpression: "org_id",
+    }));
+    if (queryResult.Items && queryResult.Items.length > 0) {
+      return queryResult.Items[0].org_id?.S || null;
+    }
+  } catch (err) {
+    console.warn(`[Role] Could not look up org for tenant '${tenantId}': ${err.message}`);
+  }
+  return null;
+}
+
+/**
+ * Handle role-aware group assignment for an existing user.
+ *
+ * When assigning SPA_<orgId>:
+ *   - SA user → skip (already has full access)
+ *   - TA_<tenantId> where tenant is in same org → remove TA_, add SPA_ (upgrade)
+ *   - TA_<tenantId> where tenant is in different org → keep TA_, add SPA_
+ *   - SPA_<sameOrg> → skip (already has this role)
+ *   - SPA_<differentOrg> → add new SPA_ (user can admin multiple orgs)
+ *
+ * When assigning TA_<tenantId>:
+ *   - SA user → skip
+ *   - SPA_<sameOrg> → skip (org admin already covers this tenant)
+ *   - Otherwise → add TA_
+ *
+ * @param {string} username - Cognito username
+ * @param {string[]} requestedGroups - Groups to assign
+ * @param {Object} cognitoISP - Cognito client
+ * @returns {Promise<string[]>} Final groups actually assigned
+ */
+async function handleExistingUserGroupAssignment(username, requestedGroups, cognitoISP) {
+  // Get user's current groups
+  const groupsResult = await cognitoISP.send(
+    new AdminListGroupsForUserCommand({
+      UserPoolId: process.env.USERPOOL_ID,
+      Username: username,
+    }),
+  );
+  const currentGroups = (groupsResult.Groups || []).map((g) => g.GroupName);
+  console.log(`[Role] User '${username}' current groups:`, currentGroups);
+
+  const isSA = currentGroups.includes("SA");
+
+  // If user is SA, skip all group assignments
+  if (isSA) {
+    console.log(`[Role] User '${username}' is SA (Super Admin), skipping all group assignments`);
+    return [];
+  }
+
+  const finalGroupsToAdd = [];
+  const groupsToRemove = [];
+
+  for (const requestedGroup of requestedGroups) {
+    if (requestedGroup.startsWith("SPA_")) {
+      const targetOrgId = requestedGroup.substring(4);
+
+      // Check if user already has this SPA role
+      if (currentGroups.includes(requestedGroup)) {
+        console.log(`[Role] User '${username}' already has ${requestedGroup}, skipping`);
+        continue;
+      }
+
+      // Check for TA_ groups in the same org → upgrade (remove TA_, add SPA_)
+      for (const existingGroup of currentGroups) {
+        if (existingGroup.startsWith("TA_")) {
+          const tenantId = existingGroup.substring(3);
+          const tenantOrgId = await getTenantOrgId(tenantId);
+          if (tenantOrgId === targetOrgId) {
+            console.log(`[Role] User '${username}' has ${existingGroup} (same org '${targetOrgId}'), will upgrade to ${requestedGroup}`);
+            groupsToRemove.push(existingGroup);
+          }
+        }
+      }
+
+      finalGroupsToAdd.push(requestedGroup);
+
+    } else if (requestedGroup.startsWith("TA_")) {
+      const tenantId = requestedGroup.substring(3);
+      const tenantOrgId = await getTenantOrgId(tenantId);
+
+      // Check if user has SPA_ for this tenant's org → skip
+      if (tenantOrgId && currentGroups.includes(`SPA_${tenantOrgId}`)) {
+        console.log(`[Role] User '${username}' already has SPA_${tenantOrgId} which covers ${requestedGroup}, skipping`);
+        continue;
+      }
+
+      // Check if already has this TA role
+      if (currentGroups.includes(requestedGroup)) {
+        console.log(`[Role] User '${username}' already has ${requestedGroup}, skipping`);
+        continue;
+      }
+
+      finalGroupsToAdd.push(requestedGroup);
+
+    } else {
+      // Other groups — add directly
+      finalGroupsToAdd.push(requestedGroup);
+    }
+  }
+
+  // Remove old groups that are being upgraded
+  for (const groupToRemove of groupsToRemove) {
+    try {
+      await cognitoISP.send(
+        new AdminRemoveUserFromGroupCommand({
+          UserPoolId: process.env.USERPOOL_ID,
+          Username: username,
+          GroupName: groupToRemove,
+        }),
+      );
+      console.log(`[Role] ✓ Removed group '${groupToRemove}' from user '${username}'`);
+    } catch (err) {
+      console.warn(`[Role] Failed to remove group '${groupToRemove}' from user '${username}':`, err.message);
+    }
+  }
+
+  // Add new groups
+  for (const groupToAdd of finalGroupsToAdd) {
+    try {
+      await cognitoISP.send(
+        new AdminAddUserToGroupCommand({
+          UserPoolId: process.env.USERPOOL_ID,
+          Username: username,
+          GroupName: groupToAdd,
+        }),
+      );
+      console.log(`[Role] ✓ Added group '${groupToAdd}' to user '${username}'`);
+    } catch (err) {
+      console.warn(`[Role] Failed to add group '${groupToAdd}' to user '${username}':`, err.message);
+    }
+  }
+
+  return finalGroupsToAdd;
+}
+
 // Main function to create user
 export const postResData = async (data, cognitoISP, requesterRoles = [], requesterEmail = "") => {
   console.log("postResData Input:", { data, requesterRoles, requesterEmail });
@@ -348,9 +501,91 @@ export const postResData = async (data, cognitoISP, requesterRoles = [], request
     DesiredDeliveryMediums: ["EMAIL"],
   };
 
-  const resData = await cognitoISP.send(new AdminCreateUserCommand(params));
-  const item = resData.User;
+  // Try to create user — if already exists, handle role-aware group assignment
+  let item;
+  let userAlreadyExists = false;
 
+  try {
+    const resData = await cognitoISP.send(new AdminCreateUserCommand(params));
+    item = resData.User;
+  } catch (createError) {
+    if (createError.name === "UsernameExistsException") {
+      console.log(`[Role] User '${data["email"].trim()}' already exists in admin userpool`);
+      userAlreadyExists = true;
+    } else {
+      throw createError;
+    }
+  }
+
+  // ── Existing user: role-aware group assignment ──
+  if (userAlreadyExists) {
+    const username = data["email"].trim();
+    let finalGroups = groups.filter((group) => group !== "SA");
+
+    // Prioritize SPA_yyy roles
+    const spaGroups = finalGroups.filter(group => group.startsWith("SPA_"));
+    if (spaGroups.length > 0) {
+      finalGroups = [spaGroups[0]];
+    }
+
+    if (finalGroups.length > 0) {
+      const assignedGroups = await handleExistingUserGroupAssignment(username, finalGroups, cognitoISP);
+
+      // Register with ASM for any newly assigned groups
+      const assignedSPA = assignedGroups.find(g => g.startsWith("SPA_"));
+      if (assignedSPA) {
+        const orgId = assignedSPA.substring(4);
+        try {
+          await registerSPAAdminWithASM(username.toLowerCase(), orgId, requesterEmail || username.toLowerCase());
+        } catch (asmError) {
+          console.error("[ASM] Failed to register SPA admin (non-fatal):", asmError.message);
+        }
+      }
+
+      const assignedTA = assignedGroups.find(g => g.startsWith("TA_"));
+      if (assignedTA) {
+        const tenantId = assignedTA.substring(3);
+        try {
+          await registerTAAdminWithASM(username.toLowerCase(), tenantId, requesterEmail || username.toLowerCase());
+        } catch (asmError) {
+          console.error("[ASM] Failed to register TA admin (non-fatal):", asmError.message);
+        }
+      }
+
+      finalGroups = assignedGroups;
+    }
+
+    // Get existing user info for response
+    const userResult = await cognitoISP.send(
+      new AdminGetUserCommand({
+        UserPoolId: process.env.USERPOOL_ID,
+        Username: username,
+      }),
+    );
+
+    const directMappingArrtibutes = [
+      "email", "phone_number", "locale", "sub", "profile",
+      "given_name", "family_name", "nickname", "name",
+      "middle_name", "picture", "gender", "birthdate",
+    ];
+    const filteredAttributs = (userResult.UserAttributes || []).filter((el) =>
+      directMappingArrtibutes.includes(el.Name),
+    );
+    const result = Object.fromEntries(
+      filteredAttributs.map((el) => [el.Name, el.Value]),
+    );
+
+    return {
+      id: userResult.Username,
+      username: userResult.Username,
+      enabled: userResult.Enabled,
+      status: userResult.UserStatus,
+      groups: finalGroups.length > 0 ? finalGroups : null,
+      ...result,
+    };
+  }
+
+  // ── New user: standard group assignment ──
   if (item) {
     if (groups && groups.length > 0) {
       // Remove SA from groups (SA users should not be created this way)

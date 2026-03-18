@@ -1,159 +1,220 @@
+import { useState, useEffect, useCallback } from "react";
 import {
-  Toolbar,
-  Button,
-  List,
-  Datagrid,
-  TextField,
-  useListContext,
-  FunctionField,
+  Container,
+  Box,
+  Typography,
+  CircularProgress,
+  Alert,
+  Chip,
+  Grid,
+} from "@mui/material";
+import {
+  Form,
+  TextInput,
+  SaveButton,
+  useNotify,
+  FormDataConsumer,
 } from "react-admin";
-import { ChevronLeft, ChevronRight } from "@mui/icons-material";
-import { Box, Chip } from "@mui/material";
+import { ColorInput } from "react-admin-color-picker";
 
-const resource = "Branding";
-const Pagination = () => {
-  const { page, perPage, total, setPage } = useListContext();
-  const nbPages = Math.ceil(total / perPage) || 1;
-  const pages = Object.keys(
-    localStorage.getItem(`${resource}tokenObj`)
-      ? JSON.parse(localStorage.getItem(`${resource}tokenObj`))
-      : [],
-  );
-  return (
-    nbPages > 1 && (
-      <Toolbar>
-        {page > 1 && (
-          <Button color="primary" key="prev" onClick={() => setPage(page - 1)}>
-            <ChevronLeft />
-            Prev
-          </Button>
-        )}
-        {page &&
-          pages.map((key, page) => {
-            return (
-              <Button
-                color="primary"
-                key={key}
-                onClick={() => setPage(page + 1)}
-              >
-                {page + 1}
-              </Button>
-            );
-          })}
-        {page !== nbPages && (
-          <Button color="primary" key="next" onClick={() => setPage(page + 1)}>
-            Next
-            <ChevronRight />
-          </Button>
-        )}
-      </Toolbar>
-    )
-  );
-};
+import awsmobile from "../aws-export";
+import { getApiHeaders } from "../utils/apiHeaders";
+import { useTenantContext } from "../contexts/TenantContext";
+import { validateUrl } from "../utils/validation";
 
-export const BrandingList = (props) => {
+const apiUrl = awsmobile.aws_backend_api_url;
+
+/**
+ * SP Portal Branding Edit - loads branding for the selected tenant directly.
+ * No list view needed since each tenant has exactly one SP Portal branding.
+ */
+export const BrandingList = () => {
+  const notify = useNotify();
+  const { selectedTenantId, selectedTenantName } = useTenantContext();
+  const [brandingData, setBrandingData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const tenantId = selectedTenantId;
+
+  const fetchBranding = useCallback(async () => {
+    if (!tenantId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/brandings/${tenantId}_spportal`, {
+        headers: getApiHeaders(),
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch branding: ${res.status}`);
+      }
+      const json = await res.json();
+      if (json.type === "exception" || json.type === "Error") {
+        throw new Error(json.message || "Failed to fetch branding");
+      }
+      setBrandingData(json.data);
+    } catch (err) {
+      console.error("Error fetching branding:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    fetchBranding();
+  }, [fetchBranding]);
+
+  const handleSave = async (values) => {
+    if (!tenantId) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${apiUrl}/brandings/${tenantId}_spportal`, {
+        method: "PUT",
+        body: JSON.stringify({ data: values }),
+        headers: getApiHeaders(),
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to save branding: ${res.status}`);
+      }
+      const json = await res.json();
+      if (json.type === "exception" || json.type === "Error") {
+        throw new Error(json.message || "Failed to save branding");
+      }
+      notify("Branding updated successfully", { type: "success" });
+      await fetchBranding();
+    } catch (err) {
+      console.error("Error saving branding:", err);
+      notify(`Error saving branding: ${err.message}`, { type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!tenantId) {
+    return (
+      <Container sx={{ padding: "15px", mt: 4 }}>
+        <Alert severity="info">
+          Please select a tenant to manage branding.
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (loading) {
+    return (
+      <Container sx={{ padding: "15px" }}>
+        <Box sx={{ margin: 8, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <CircularProgress size={36} thickness={2} />
+          <Typography sx={{ mt: 2 }} color="text.secondary">
+            Loading branding...
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container sx={{ padding: "15px", mt: 4 }}>
+        <Alert severity="error">Error loading branding: {error}</Alert>
+      </Container>
+    );
+  }
+
   return (
-    <Box sx={{ paddingTop: 5 }}>
-      <List
-        {...props}
-        title={"Brandings"}
-        perPage={10}
-        pagination={<Pagination />}
-        actions={<></>}
-        exporter={false}
+    <Container sx={{ padding: "15px", mt: 2, mb: 6 }}>
+      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", mb: 3 }}>
+        <Typography variant="h4">End User Portal Branding</Typography>
+        <Chip
+          label={`Tenant: ${selectedTenantName || tenantId}`}
+          color="primary"
+          variant="outlined"
+          sx={{ mt: 1 }}
+        />
+      </Box>
+
+      <Form
+        defaultValues={brandingData || {}}
+        onSubmit={handleSave}
+        mode="onBlur"
+        reValidateMode="onBlur"
       >
-        <Datagrid rowClick="show" bulkActionButtons={false} optimized>
-          <FunctionField
-            label="Portal Type"
-            render={(record) => {
-              if (record.portal_type === 'Login Service Portal') {
-                return <Chip label="Login Service Portal" color="warning" size="small" />;
-              }
-              return (
-                <Chip 
-                  label="End User Portal"
-                  color="info" 
-                  size="small" 
-                  variant="outlined"
-                />
-              );
-            }}
-            sortable={false}
-          />
-          <TextField label="Name" source="name" sortable={true} />
-          <FunctionField
-            label="Login Outter Color"
-            render={(record) => (
-              <Box
-                sx={{
-                  bgcolor: record.login_page_outter_color,
-                  m: 1,
-                  width: "1rem",
-                  height: "1rem",
-                  border: 1,
-                }}
-              />
-            )}
-          />
-          <FunctionField
-            label="Login Center Color"
-            render={(record) => (
-              <Box
-                sx={{
-                  bgcolor: record.login_page_center_color,
-                  m: 1,
-                  width: "1rem",
-                  height: "1rem",
-                  border: 1,
-                }}
-              />
-            )}
-          />
-          <FunctionField
-            label="App Bar Start Color"
-            render={(record) => (
-              <Box
-                sx={{
-                  bgcolor: record.app_bar_start_color,
-                  m: 1,
-                  width: "1rem",
-                  height: "1rem",
-                  border: 1,
-                }}
-              />
-            )}
-          />
-          <FunctionField
-            label="App Bar End Color"
-            render={(record) => (
-              <Box
-                sx={{
-                  bgcolor: record.app_bar_end_color,
-                  m: 1,
-                  width: "1rem",
-                  height: "1rem",
-                  border: 1,
-                }}
-              />
-            )}
-          />
-          <FunctionField
-            label="App Title Icon Color"
-            render={(record) => (
-              <Box
-                sx={{
-                  bgcolor: record.app_title_icon_color,
-                  m: 1,
-                  width: "1rem",
-                  height: "1rem",
-                  border: 1,
-                }}
-              />
-            )}
-          />
-          <Button label="Edit" color="primary" icon="Edit" />
-        </Datagrid>
-      </List>
-    </Box>
+        <TextInput label="Title Message" source="app_title_msg" required fullWidth helperText={false} />
+        <div style={{ height: "1.5em" }} />
+        <TextInput label="Portal Title Message" source="portal_title_msg" fullWidth helperText={false} />
+        <div style={{ height: "1.5em" }} />
+        <TextInput label="Portal Description Message" source="portal_description_msg" fullWidth helperText={false} />
+
+        <Grid container spacing={2} sx={{ mt: 1 }}>
+          <Grid item xs={12} sm={6} md={4}>
+            <Box sx={{ display: "flex" }}>
+              <ColorInput source="login_page_center_color" fullWidth isRequired picker="Sketch" />
+              <FormDataConsumer>
+                {({ formData }) => (
+                  <Box sx={{ bgcolor: formData?.login_page_center_color, mt: 5, ml: 1, width: "1rem", height: "1rem", border: 1 }} />
+                )}
+              </FormDataConsumer>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Box sx={{ display: "flex" }}>
+              <ColorInput source="login_page_outter_color" fullWidth isRequired picker="Sketch" />
+              <FormDataConsumer>
+                {({ formData }) => (
+                  <Box sx={{ bgcolor: formData?.login_page_outter_color, mt: 5, ml: 1, width: "1rem", height: "1rem", border: 1 }} />
+                )}
+              </FormDataConsumer>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Box sx={{ display: "flex" }}>
+              <ColorInput source="app_bar_start_color" fullWidth isRequired picker="Sketch" />
+              <FormDataConsumer>
+                {({ formData }) => (
+                  <Box sx={{ bgcolor: formData?.app_bar_start_color, mt: 5, ml: 1, width: "1rem", height: "1rem", border: 1 }} />
+                )}
+              </FormDataConsumer>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Box sx={{ display: "flex" }}>
+              <ColorInput source="app_bar_end_color" fullWidth isRequired picker="Sketch" />
+              <FormDataConsumer>
+                {({ formData }) => (
+                  <Box sx={{ bgcolor: formData?.app_bar_end_color, mt: 5, ml: 1, width: "1rem", height: "1rem", border: 1 }} />
+                )}
+              </FormDataConsumer>
+            </Box>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Box sx={{ display: "flex" }}>
+              <ColorInput source="app_title_icon_color" fullWidth isRequired picker="Sketch" />
+              <FormDataConsumer>
+                {({ formData }) => (
+                  <Box sx={{ bgcolor: formData?.app_title_icon_color, mt: 5, ml: 1, width: "1rem", height: "1rem", border: 1 }} />
+                )}
+              </FormDataConsumer>
+            </Box>
+          </Grid>
+        </Grid>
+
+        <div style={{ height: "1.5em" }} />
+        <TextInput source="app_login_logo_url" required validate={validateUrl} fullWidth helperText="size 250x50" />
+        <div style={{ height: "1.5em" }} />
+        <TextInput source="fav_icon_url" required validate={validateUrl} fullWidth helperText="size 16x16" />
+        <div style={{ height: "1.5em" }} />
+        <TextInput source="app_bar_logo_url" required validate={validateUrl} fullWidth helperText="size 250x50" />
+        <div style={{ height: "1.5em" }} />
+        <TextInput source="app_terms_url" required validate={validateUrl} fullWidth helperText={false} />
+        <div style={{ height: "1.5em" }} />
+        <TextInput source="app_privacy_url" required validate={validateUrl} fullWidth helperText={false} />
+
+        <Box sx={{ margin: "2em 0 5em 0" }}>
+          <SaveButton label={saving ? "Saving..." : "Update Branding"} disabled={saving} />
+        </Box>
+      </Form>
+    </Container>
   );
 };

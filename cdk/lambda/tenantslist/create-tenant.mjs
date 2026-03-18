@@ -2,6 +2,7 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import {
   CognitoIdentityProviderClient,
   AdminCreateUserCommand,
+  AdminListGroupsForUserCommand,
   CreateGroupCommand,
   AdminAddUserToGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
@@ -158,6 +159,7 @@ export async function createTenant(data, requesterRole, requesterOrgId, requeste
         data.adminFirstName || "",
         data.adminLastName || "",
         data.tenantId,
+        data.orgId,
       );
 
       console.log(`Tenant admin user created successfully in admin userpool: ${data.adminEmail}`);
@@ -177,13 +179,19 @@ export async function createTenant(data, requesterRole, requesterOrgId, requeste
 }
 
 /**
- * Create admin user in tenant's UserPool and add to TA_<tenantId> group
+ * Create admin user in admin UserPool and add to TA_<tenantId> group.
  *
- * @param {string} userPoolId - Cognito UserPool ID
+ * If the user already exists, checks their current roles:
+ * - SA (Super Admin) → skip TA_ group assignment (already has full access)
+ * - SPA_<orgId> matching tenant's org → skip TA_ group assignment (org admin already covers this tenant)
+ * - Otherwise → add user to TA_<tenantId> group
+ *
+ * @param {string} userPoolId - Cognito UserPool ID (admin userpool)
  * @param {string} email - Admin email
  * @param {string} firstName - Admin first name
  * @param {string} lastName - Admin last name
  * @param {string} tenantId - Tenant ID
+ * @param {string} orgId - Organization ID that owns the tenant
  */
 async function createAdminUser(
   userPoolId,
@@ -191,31 +199,76 @@ async function createAdminUser(
   firstName,
   lastName,
   tenantId,
+  orgId,
 ) {
   console.log("Creating admin user in UserPool:", {
     userPoolId,
     email,
     tenantId,
+    orgId,
   });
 
-  // 1. Create user
-  await cognito.send(
-    new AdminCreateUserCommand({
-      UserPoolId: userPoolId,
-      Username: email,
-      UserAttributes: [
-        { Name: "email", Value: email },
-        { Name: "email_verified", Value: "true" },
-        { Name: "given_name", Value: firstName },
-        { Name: "family_name", Value: lastName },
-      ],
-      DesiredDeliveryMediums: ["EMAIL"],
-    }),
-  );
+  // 1. Create user (or skip if user already exists)
+  let userAlreadyExists = false;
+  try {
+    await cognito.send(
+      new AdminCreateUserCommand({
+        UserPoolId: userPoolId,
+        Username: email,
+        UserAttributes: [
+          { Name: "email", Value: email },
+          { Name: "email_verified", Value: "true" },
+          { Name: "given_name", Value: firstName },
+          { Name: "family_name", Value: lastName },
+        ],
+        DesiredDeliveryMediums: ["EMAIL"],
+      }),
+    );
+    console.log("User created, now creating/adding to group");
+  } catch (error) {
+    if (error.name === "UsernameExistsException") {
+      console.log(`User '${email}' already exists in admin userpool`);
+      userAlreadyExists = true;
+    } else {
+      throw error;
+    }
+  }
 
-  console.log("User created, now creating/adding to group");
+  // 2. If user already existed, check if they have a higher-privilege role
+  //    that already covers this tenant — if so, skip TA_ group assignment
+  if (userAlreadyExists) {
+    try {
+      const groupsResult = await cognito.send(
+        new AdminListGroupsForUserCommand({
+          UserPoolId: userPoolId,
+          Username: email,
+        }),
+      );
 
-  // 2. Create TA group if doesn't exist
+      const userGroups = (groupsResult.Groups || []).map((g) => g.GroupName);
+      console.log(`User '${email}' current groups:`, userGroups);
+
+      const isSA = userGroups.includes("SA");
+      const isSPAForThisOrg = orgId && userGroups.includes(`SPA_${orgId}`);
+
+      if (isSA) {
+        console.log(`User '${email}' is SA (Super Admin), skipping TA_${tenantId} assignment`);
+        return;
+      }
+
+      if (isSPAForThisOrg) {
+        console.log(`User '${email}' is SPA_${orgId} (IT Svc Org Admin for this tenant's org), skipping TA_${tenantId} assignment`);
+        return;
+      }
+
+      console.log(`User '${email}' does not have SA or SPA_${orgId} role, proceeding to add TA_${tenantId}`);
+    } catch (listError) {
+      console.warn(`Failed to list groups for user '${email}' (non-fatal, will proceed to add group):`, listError.message);
+      // Proceed to add group anyway — better to have a redundant group than miss it
+    }
+  }
+
+  // 3. Create TA group if doesn't exist
   const groupName = `TA_${tenantId}`;
 
   try {
@@ -235,7 +288,7 @@ async function createAdminUser(
     }
   }
 
-  // 3. Add user to group
+  // 4. Add user to group
   await cognito.send(
     new AdminAddUserToGroupCommand({
       UserPoolId: userPoolId,

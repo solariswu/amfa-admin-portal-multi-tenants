@@ -3,14 +3,7 @@ import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'ad
 
 const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
 
-// Config types we manage in this Lambda
-const CONFIG_TYPES = {
-  amfaConfigs: 'amfaConfigs',
-  amfaLegals: 'amfaLegals',
-};
-
 // Fields from amfaConfigs that we expose in the settings UI
-// (excluding asmurl, asm_portal_url, and COMMENT fields)
 const AMFA_CONFIG_UI_FIELDS = [
   'enable_password_reset',
   'enable_self_service',
@@ -34,6 +27,16 @@ const AMFA_CONFIG_UI_FIELDS = [
 const LEGAL_FIELDS = [
   'terms_of_service',
   'privacy_policy',
+];
+
+// Fields from amfaBrandings (Login Service branding)
+const BRANDING_FIELDS = [
+  'service_name',
+  'mobile_token_svc_name',
+  'logo_url',
+  'email_logo_url',
+  'brand_base_color',
+  'favicon_url',
 ];
 
 const fetchConfig = async (configType, tenantId) => {
@@ -64,12 +67,11 @@ const saveConfig = async (configType, tenantId, value) => {
 };
 
 /**
- * Extract UI-facing settings from the full amfaConfigs + amfaLegals
+ * Build response from all config types
  */
-const buildSettingsResponse = (amfaConfigs, amfaLegals) => {
+const buildSettingsResponse = (amfaConfigs, amfaLegals, amfaBrandings) => {
   const settings = {};
 
-  // Extract amfaConfigs UI fields
   if (amfaConfigs) {
     AMFA_CONFIG_UI_FIELDS.forEach(field => {
       if (amfaConfigs[field] !== undefined) {
@@ -78,7 +80,6 @@ const buildSettingsResponse = (amfaConfigs, amfaLegals) => {
     });
   }
 
-  // Extract amfaLegals fields
   if (amfaLegals) {
     LEGAL_FIELDS.forEach(field => {
       if (amfaLegals[field] !== undefined) {
@@ -87,14 +88,21 @@ const buildSettingsResponse = (amfaConfigs, amfaLegals) => {
     });
   }
 
+  if (amfaBrandings) {
+    BRANDING_FIELDS.forEach(field => {
+      if (amfaBrandings[field] !== undefined) {
+        settings[field] = amfaBrandings[field];
+      }
+    });
+  }
+
   return settings;
 };
 
 /**
- * Apply UI settings back to the full config objects, preserving non-UI fields
+ * Apply UI settings back to config objects, preserving non-UI fields
  */
-const applySettingsToConfigs = (settings, existingAmfaConfigs, existingAmfaLegals) => {
-  // Merge amfaConfigs: preserve existing non-UI fields, update UI fields
+const applySettingsToConfigs = (settings, existingAmfaConfigs, existingAmfaLegals, existingAmfaBrandings) => {
   const updatedAmfaConfigs = { ...(existingAmfaConfigs || {}) };
   AMFA_CONFIG_UI_FIELDS.forEach(field => {
     if (settings[field] !== undefined) {
@@ -102,7 +110,6 @@ const applySettingsToConfigs = (settings, existingAmfaConfigs, existingAmfaLegal
     }
   });
 
-  // Merge amfaLegals: update legal fields
   const updatedAmfaLegals = { ...(existingAmfaLegals || {}) };
   LEGAL_FIELDS.forEach(field => {
     if (settings[field] !== undefined) {
@@ -110,23 +117,26 @@ const applySettingsToConfigs = (settings, existingAmfaConfigs, existingAmfaLegal
     }
   });
 
-  return { updatedAmfaConfigs, updatedAmfaLegals };
+  const updatedAmfaBrandings = { ...(existingAmfaBrandings || {}) };
+  BRANDING_FIELDS.forEach(field => {
+    if (settings[field] !== undefined) {
+      updatedAmfaBrandings[field] = settings[field];
+    }
+  });
+
+  return { updatedAmfaConfigs, updatedAmfaLegals, updatedAmfaBrandings };
 };
 
 export const handler = async (event) => {
   console.info("Settings Lambda EVENT\n" + JSON.stringify(event, null, 2));
 
-  // 1. Extract tenant_id from request path or header
-  // Path parameter is {id} from /settings/{id}, so also check pathParameters.id
   const tenantId = getTenantIdFromRequest(event) || event.pathParameters?.id;
 
   if (!tenantId) {
     return createResponse(400, { error: 'tenant_id required in request' });
   }
 
-  // 2. Validate authorization
   const authResult = await validateTenantAccess(event, tenantId);
-
   if (!authResult.authorized) {
     return createResponse(authResult.statusCode, { error: authResult.error });
   }
@@ -137,18 +147,16 @@ export const handler = async (event) => {
 
   try {
     if (httpMethod === 'GET') {
-      // Fetch both config types
-      const [amfaConfigs, amfaLegals] = await Promise.all([
-        fetchConfig(CONFIG_TYPES.amfaConfigs, tenantId),
-        fetchConfig(CONFIG_TYPES.amfaLegals, tenantId),
+      const [amfaConfigs, amfaLegals, amfaBrandings] = await Promise.all([
+        fetchConfig('amfaConfigs', tenantId),
+        fetchConfig('amfaLegals', tenantId),
+        fetchConfig('amfaBrandings', tenantId),
       ]);
 
-      const settings = buildSettingsResponse(amfaConfigs, amfaLegals);
-
+      const settings = buildSettingsResponse(amfaConfigs, amfaLegals, amfaBrandings);
       return createResponse(200, { data: settings });
 
     } else if (httpMethod === 'PUT') {
-      // Parse incoming settings
       const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
       const incomingSettings = body.data;
 
@@ -156,27 +164,26 @@ export const handler = async (event) => {
         return createResponse(400, { error: 'Missing data in request body' });
       }
 
-      // Fetch existing configs to preserve non-UI fields
-      const [existingAmfaConfigs, existingAmfaLegals] = await Promise.all([
-        fetchConfig(CONFIG_TYPES.amfaConfigs, tenantId),
-        fetchConfig(CONFIG_TYPES.amfaLegals, tenantId),
+      const [existingAmfaConfigs, existingAmfaLegals, existingAmfaBrandings] = await Promise.all([
+        fetchConfig('amfaConfigs', tenantId),
+        fetchConfig('amfaLegals', tenantId),
+        fetchConfig('amfaBrandings', tenantId),
       ]);
 
-      // Apply settings changes
-      const { updatedAmfaConfigs, updatedAmfaLegals } = applySettingsToConfigs(
+      const { updatedAmfaConfigs, updatedAmfaLegals, updatedAmfaBrandings } = applySettingsToConfigs(
         incomingSettings,
         existingAmfaConfigs,
-        existingAmfaLegals
+        existingAmfaLegals,
+        existingAmfaBrandings
       );
 
-      // Save both config types
       await Promise.all([
-        saveConfig(CONFIG_TYPES.amfaConfigs, tenantId, updatedAmfaConfigs),
-        saveConfig(CONFIG_TYPES.amfaLegals, tenantId, updatedAmfaLegals),
+        saveConfig('amfaConfigs', tenantId, updatedAmfaConfigs),
+        saveConfig('amfaLegals', tenantId, updatedAmfaLegals),
+        saveConfig('amfaBrandings', tenantId, updatedAmfaBrandings),
       ]);
 
-      // Return updated settings
-      const settings = buildSettingsResponse(updatedAmfaConfigs, updatedAmfaLegals);
+      const settings = buildSettingsResponse(updatedAmfaConfigs, updatedAmfaLegals, updatedAmfaBrandings);
       return createResponse(200, { data: settings });
 
     } else {

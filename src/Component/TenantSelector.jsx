@@ -47,6 +47,16 @@ export const TenantSelector = () => {
     }
   }, [isTA, selectedTenantId, tenants, setSelectedTenant]);
 
+  // Clear stale selection if the selected tenant was deleted
+  useEffect(() => {
+    if (isSAOrSPA && tenants && selectedTenantId && !tenantsLoading) {
+      const exists = tenants.find(t => t.id === selectedTenantId);
+      if (!exists) {
+        setSelectedTenant(null, null);
+      }
+    }
+  }, [isSAOrSPA, tenants, selectedTenantId, tenantsLoading, setSelectedTenant]);
+
   if (permissionsLoading) return null;
 
   // TA users: show static tenant label
