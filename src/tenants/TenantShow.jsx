@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Show,
   SimpleShowLayout,
@@ -24,9 +24,12 @@ import {
 import InfoIcon from '@mui/icons-material/Info';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PaletteIcon from '@mui/icons-material/Palette';
+import EmailIcon from '@mui/icons-material/Email';
 import { TenantAdminList } from './TenantAdminList';
 import { TenantSettingsTab } from './TenantSettingsTab';
 import { TenantBrandingTab } from './TenantBrandingTab';
+import { TenantSmtpTab } from './TenantSmtpTab';
+import { useTenantContext } from '../contexts/TenantContext';
 
 /**
  * Show Actions with Delete button in upper right.
@@ -123,11 +126,34 @@ const TenantDetailsTab = ({ orgMap }) => {
 };
 
 /**
+ * One-way sync: when the tenant show record loads, update the sidebar dropdown to match.
+ * Navigation in the reverse direction (dropdown → show page) is handled by TenantSelector directly.
+ */
+const TenantContextSyncer = () => {
+  const record = useRecordContext();
+  const { setSelectedTenant } = useTenantContext();
+  const lastSyncedRecordId = useRef(null);
+
+  useEffect(() => {
+    if (record?.id && record.id !== lastSyncedRecordId.current) {
+      lastSyncedRecordId.current = record.id;
+      setSelectedTenant(record.id, record.name || record.id);
+    }
+  }, [record?.id, record?.name, setSelectedTenant]);
+
+  return null;
+};
+
+/**
  * TenantShow Component
  * Displays detailed view of a tenant with tabbed layout:
  * - Details: basic info + administrators
  * - Settings: read-only view of tenant settings
  * - Branding: read-only view of login service + end user portal branding
+ * 
+ * Syncs with sidebar TenantSelector:
+ * - Auto-selects the viewed tenant in the dropdown
+ * - Navigates to a new tenant when dropdown selection changes
  */
 export const TenantShow = () => {
   const [tabIndex, setTabIndex] = useState(0);
@@ -151,6 +177,8 @@ export const TenantShow = () => {
 
   return (
     <Show actions={<ShowActions />}>
+      {/* Bidirectional sync between record and sidebar tenant dropdown */}
+      <TenantContextSyncer />
       <Box sx={{ px: 3, pt: 1, pb: 3 }}>
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs
@@ -180,6 +208,13 @@ export const TenantShow = () => {
               id="tenant-tab-2"
               aria-controls="tenant-tabpanel-2"
             />
+            <Tab
+              icon={<EmailIcon />}
+              iconPosition="start"
+              label="SMTP"
+              id="tenant-tab-3"
+              aria-controls="tenant-tabpanel-3"
+            />
           </Tabs>
         </Box>
 
@@ -193,6 +228,10 @@ export const TenantShow = () => {
 
         <TabPanel value={tabIndex} index={2}>
           <TenantBrandingTab />
+        </TabPanel>
+
+        <TabPanel value={tabIndex} index={3}>
+          <TenantSmtpTab />
         </TabPanel>
       </Box>
     </Show>

@@ -1140,6 +1140,7 @@ export class SSOApiGateway {
           USERPOOL_ID: userPoolId,
           AMFA_BASE_URL: this.amfaBaseUrl,
           AMFA_SPINFO_TABLE: "amfa-spinfo",
+          AMFATENANT_TABLE,
           IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
           ACCOUNT_ID: this.account || "",
           ASM_PORTAL_URL: process.env.ASM_PORTAL_URL || "",

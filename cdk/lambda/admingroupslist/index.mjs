@@ -6,16 +6,17 @@ import {
 
 import postResData from "./post.mjs";
 
+// Import shared auth utilities from lambda layer
+import {
+  isValidRole,
+  getTAGroupsForOrg,
+} from "admin-auth";
+
 const cognitoISP = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION,
 });
 
 const Limit = 60;
-
-// Valid role types for filtering
-const VALID_ROLES = ["SA"];
-const isValidRole = (role) =>
-  VALID_ROLES.includes(role) || role.startsWith("SPA_") || role.startsWith("TA_");
 
 // Extract requester roles from JWT claims
 const extractRequesterRoles = (jwtClaims) => {
@@ -25,8 +26,8 @@ const extractRequesterRoles = (jwtClaims) => {
   return Array.isArray(groups) ? groups.filter(isValidRole) : [];
 };
 
-// Filter groups based on RBAC rules
-const filterGroupsByRBAC = (groups, requesterRoles) => {
+// Filter groups based on RBAC rules — scoped to the requester's org for SPA
+const filterGroupsByRBAC = async (groups, requesterRoles) => {
   console.log("Filtering groups by RBAC:", {
     groups: groups.map((g) => g.GroupName),
     requesterRoles,
@@ -43,12 +44,18 @@ const filterGroupsByRBAC = (groups, requesterRoles) => {
     return groups;
   }
 
-  // SPA_yyy would not get "SA" among the groups
+  // SPA_yyy: only their own SPA group + TA groups for tenants in their org
   const spaRole = requesterRoles.find(role => role.startsWith("SPA_"));
   if (spaRole) {
-    const filteredGroups = groups.filter((group) => group.GroupName !== "SA");
+    const orgId = spaRole.substring(4);
+    const allTAGroupNames = groups
+      .filter(g => g.GroupName.startsWith("TA_"))
+      .map(g => g.GroupName);
+    const orgTAGroups = await getTAGroupsForOrg(orgId, allTAGroupNames);
+    const allowedGroupNames = new Set([spaRole, ...orgTAGroups]);
+    const filteredGroups = groups.filter((group) => allowedGroupNames.has(group.GroupName));
     console.log(
-      `${spaRole} user - filtered out SA group:`,
+      `${spaRole} user - org-scoped groups:`,
       filteredGroups.map((g) => g.GroupName),
     );
     return filteredGroups;
@@ -134,8 +141,8 @@ export const handler = async (event) => {
         return filtered;
       }, []);
 
-      // Apply RBAC filtering based on requester roles
-      const rbacFilteredGroups = filterGroupsByRBAC(reduced, requesterRoles);
+      // Apply RBAC filtering based on requester roles (async for SPA org lookup)
+      const rbacFilteredGroups = await filterGroupsByRBAC(reduced, requesterRoles);
 
       let resData = [];
       if (rbacFilteredGroups && rbacFilteredGroups.length > 0) {

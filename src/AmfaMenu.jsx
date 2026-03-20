@@ -67,9 +67,10 @@ export const AmfaMenu = () => {
           <Menu.ResourceItem name="users" />
           <Menu.ResourceItem name="importusers" />
           <Menu.ResourceItem name="groups" />
-          <Menu.ResourceItem name="brandings" />
-          <Menu.ResourceItem name="settings" />
           <Menu.ResourceItem name="appclients" />
+          {!isSAOrSPA && <Menu.ResourceItem name="brandings" />}
+          {!isSAOrSPA && <Menu.ResourceItem name="settings" />}
+          {!isSAOrSPA && <Menu.ResourceItem name="smtp" />}
         </>
       ) : (
         sidebarOpen && (

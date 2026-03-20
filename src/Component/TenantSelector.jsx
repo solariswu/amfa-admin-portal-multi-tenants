@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { usePermissions, useGetList } from 'react-admin';
+import { usePermissions, useGetList, useRefresh } from 'react-admin';
 import {
   Box,
   FormControl,
@@ -11,6 +11,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import DomainIcon from '@mui/icons-material/Domain';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTenantContext } from '../contexts/TenantContext';
 
 /**
@@ -23,6 +24,9 @@ import { useTenantContext } from '../contexts/TenantContext';
 export const TenantSelector = () => {
   const { permissions, isLoading: permissionsLoading } = usePermissions();
   const { selectedTenantId, selectedTenantName, setSelectedTenant } = useTenantContext();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const refresh = useRefresh();
 
   const isTA = permissions?.isTA;
   const isSAOrSPA = permissions?.isSA || permissions?.isSPA;
@@ -88,6 +92,15 @@ export const TenantSelector = () => {
       }
       const tenant = tenants?.find(t => t.id === tenantId);
       setSelectedTenant(tenantId, tenant?.name || tenantId);
+
+      // If currently on a tenant show page, navigate to the newly selected tenant's show page
+      if (location.pathname.match(/\/tenants\/[^/]+\/show/)) {
+        navigate(`/tenants/${encodeURIComponent(tenantId)}/show`);
+      }
+
+      // Invalidate react-admin's data cache so all visible lists/views refetch
+      // with the new X-Tenant-Id header
+      refresh();
     };
 
     return (

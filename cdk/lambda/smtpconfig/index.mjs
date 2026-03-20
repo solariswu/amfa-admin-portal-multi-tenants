@@ -1,5 +1,6 @@
 import { getSMTP, setSMTP } from './kmsUtil.mjs';
 import { validateTenantAccess, getTenantIdFromRequest, createResponse } from 'admin-auth';
+import nodemailer from 'nodemailer';
 
 export const handler = async (event) => {
 
@@ -23,8 +24,7 @@ export const handler = async (event) => {
     console.log(`Authorized access for tenant ${tenantId}, role: ${authResult.role}`);
 
     const testSMTP = async (secret) => {
-        const nodemailer = require("nodemailer");
-        const transporter = nodemailer.createTransporter({
+        const transporter = nodemailer.createTransport({
             host: secret.host,
             port: secret.port,
             secure: secret.secure === 'true' || (secret.secure ? secret.secure : false),

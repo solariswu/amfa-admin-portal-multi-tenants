@@ -67,8 +67,8 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
 
-  // Change to SPA dialog state
-  const [changeDialogOpen, setChangeDialogOpen] = useState(false);
+  // Change to SPA dialog state — DISABLED: promote TA to SPA feature
+  // const [changeDialogOpen, setChangeDialogOpen] = useState(false);
 
   // Delete confirmation state
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -92,39 +92,38 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
     });
   };
 
-  // Change to SPA handlers
-  const handleChangeToSPAOpen = () => {
-    setChangeDialogOpen(true);
-    handleMenuClose();
-  };
-
-  const handleChangeToSPAConfirm = () => {
-    if (!selectedAdmin || !orgId) return;
-
-    update(
-      'admins',
-      {
-        id: selectedAdmin.id,
-        data: { ...selectedAdmin, groups: [spaGroup] },
-        previousData: selectedAdmin,
-      },
-      {
-        onSuccess: () => {
-          notify('Admin role changed to IT Svc Org Admin (SPA) successfully', { type: 'success' });
-          setChangeDialogOpen(false);
-          setSelectedAdmin(null);
-          refresh();
-        },
-        onError: (error) => {
-          notify(`Error: ${error.message}`, { type: 'error' });
-        },
-      }
-    );
-  };
-
-  const handleChangeToSPACancel = () => {
-    setChangeDialogOpen(false);
-  };
+  // DISABLED: promote TA to SPA feature
+  // const handleChangeToSPAOpen = () => {
+  //   setChangeDialogOpen(true);
+  //   handleMenuClose();
+  // };
+  //
+  // const handleChangeToSPAConfirm = () => {
+  //   if (!selectedAdmin || !orgId) return;
+  //   update(
+  //     'admins',
+  //     {
+  //       id: selectedAdmin.id,
+  //       data: { ...selectedAdmin, groups: [spaGroup] },
+  //       previousData: selectedAdmin,
+  //     },
+  //     {
+  //       onSuccess: () => {
+  //         notify('Admin role changed to IT Svc Org Admin (SPA) successfully', { type: 'success' });
+  //         setChangeDialogOpen(false);
+  //         setSelectedAdmin(null);
+  //         refresh();
+  //       },
+  //       onError: (error) => {
+  //         notify(`Error: ${error.message}`, { type: 'error' });
+  //       },
+  //     }
+  //   );
+  // };
+  //
+  // const handleChangeToSPACancel = () => {
+  //   setChangeDialogOpen(false);
+  // };
 
   // Delete handlers
   const handleDeleteOpen = () => {
@@ -266,18 +265,19 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
           <MenuItem disabled sx={{ color: 'text.primary', fontWeight: 'medium' }}>
             {selectedAdmin?.email}
           </MenuItem>
-          {orgId && (
+          {/* DISABLED: promote TA to SPA feature */}
+          {/* {orgId && (
             <MenuItem onClick={handleChangeToSPAOpen}>
               Change to Org Admin (SPA)
             </MenuItem>
-          )}
+          )} */}
           <MenuItem onClick={handleDeleteOpen} sx={{ color: 'error.main' }}>
             Delete User
           </MenuItem>
         </Menu>
 
-        {/* Change to SPA Confirmation Dialog */}
-        <Dialog
+        {/* DISABLED: promote TA to SPA feature */}
+        {/* <Dialog
           open={changeDialogOpen}
           onClose={handleChangeToSPACancel}
           maxWidth="sm"
@@ -306,7 +306,7 @@ export const TenantAdminList = ({ tenantId, orgId }) => {
               Confirm Change
             </Button>
           </DialogActions>
-        </Dialog>
+        </Dialog> */}
 
         {/* Delete Confirmation */}
         <Confirm

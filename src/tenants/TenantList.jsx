@@ -110,6 +110,7 @@ export const TenantList = props => {
 			<List  {...props}
 				title={"Tenants"} 
 				perPage={10} 
+				sort={{ field: 'org_id', order: 'ASC' }}
 				pagination={<Pagination />}
 				actions={<ListActions />}
 				filters={tenantFilters}
@@ -120,6 +121,8 @@ export const TenantList = props => {
 					<TextField label="Tenant Id" source="id" sortable={true} />
 					<FunctionField 
 						label="IT Svc Org"
+						sortBy="org_id"
+						sortable={true}
 						render={record => {
 							const orgName = orgMap[record.org_id] || record.org_id || 'N/A';
 							return record.org_id ? (
@@ -128,7 +131,6 @@ export const TenantList = props => {
 								</Link>
 							) : orgName;
 						}}
-						sortable={false}
 					/>
 					<TextField label="Contact Email" source="contact" sortable={false} />
 					<TextField label="End User Service Provider URL" source="endUserSpUrl" sortable={false} />

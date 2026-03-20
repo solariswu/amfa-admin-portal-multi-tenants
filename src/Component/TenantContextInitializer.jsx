@@ -18,7 +18,11 @@ export const TenantContextInitializer = () => {
   const { selectedTenantId, setSelectedTenant } = useTenantContext();
 
   useEffect(() => {
-    if (!isLoading && permissions?.isTA && permissions?.tenantId && !selectedTenantId) {
+    // For TA users, always force-set their tenant to match their JWT role.
+    // This overrides any stale sessionStorage value from a previous session
+    // (e.g., SA/SPA logged in before and selected a different tenant).
+    if (!isLoading && permissions?.isTA && permissions?.tenantId && 
+        selectedTenantId !== permissions.tenantId) {
       setSelectedTenant(permissions.tenantId, null);
     }
   }, [isLoading, permissions, selectedTenantId, setSelectedTenant]);

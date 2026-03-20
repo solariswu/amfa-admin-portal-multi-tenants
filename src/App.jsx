@@ -16,6 +16,7 @@ import tenants from "./tenants";
 import organizations from "./organizations";
 import brandings from "./brandings";
 import settings from "./settings";
+import smtp from "./smtp";
 import admins from "./admins";
 
 import authProvider from "./Component/authProvider/authProvider";
@@ -99,6 +100,7 @@ export const App = () => (
         <Resource name="admins" {...admins} />
         <Resource name="brandings" {...brandings} />
         <Resource name="settings" {...settings} />
+        <Resource options={{ label: 'SMTP' }} name="smtp" {...smtp} />
         <Resource options={{ label: 'Service Providers' }} name="appclients" {...appclients} />
         {/* <Resource options={{ label: 'Service Providers' }} name="samls" {...samls} /> */}
         {/* <CustomRoutes>

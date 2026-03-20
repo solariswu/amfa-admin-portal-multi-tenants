@@ -13,6 +13,7 @@ import getResData from "./get.mjs";
 import {
   extractRolesFromEvent,
   prioritizeRoles,
+  getTAGroupsForOrg,
 } from "admin-auth";
 
 const cognitoISP = new CognitoIdentityProviderClient({
@@ -67,6 +68,8 @@ const getUsers = async (
   let loopCount = 0;
   let params = {};
   let usersData = { Users: [] };
+  // Cache for SPA org-scoped allowed groups (lazy-loaded once per getUsers call)
+  let spaAllowedGroups = null;
 
   try {
     do {
@@ -123,10 +126,23 @@ const getUsers = async (
         }
 
         if (!userGroup && primaryRole) {
-          // filter out "SA" users when requesterRole is "SPA_yyy"
+          // SPA_yyy: only show users in their own SPA group or TA groups for their org's tenants
           if (primaryRole.startsWith("SPA_")) {
+            // Lazy-build allowed groups set (once per getUsers call)
+            if (!spaAllowedGroups) {
+              const orgId = primaryRole.substring(4);
+              // Get all TA group names from Cognito for org-scoping
+              const { ListGroupsCommand } = await import("@aws-sdk/client-cognito-identity-provider");
+              const allGroupsData = await cognitoISP.send(new ListGroupsCommand({ UserPoolId: process.env.USERPOOL_ID }));
+              const allTAGroupNames = (allGroupsData.Groups || [])
+                .filter(g => g.GroupName.startsWith("TA_"))
+                .map(g => g.GroupName);
+              const orgTAGroups = await getTAGroupsForOrg(orgId, allTAGroupNames);
+              spaAllowedGroups = new Set([primaryRole, ...orgTAGroups]);
+              console.log(`[Scope] SPA '${primaryRole}' allowed groups for user listing:`, [...spaAllowedGroups]);
+            }
             usersData.Users = usersData.Users.filter(
-              (user) => user.groups.includes("SA") === false,
+              (user) => user.groups && user.groups.some((group) => spaAllowedGroups.has(group)),
             );
           }
           // filter out users not in requester's groups when requesterRole is "TA_xxx"
