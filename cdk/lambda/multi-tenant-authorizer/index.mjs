@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
+import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
 
 /**
  * Multi-tenant Lambda authorizer for API Gateway
@@ -8,6 +9,45 @@ import jwksClient from 'jwks-rsa';
 
 // Cache for JWKS clients to avoid repeated requests
 const jwksClients = new Map();
+
+// Cache for tenant data from DynamoDB
+let tenantsCache = null;
+let tenantsCacheTimestamp = 0;
+const TENANTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
+
+/**
+ * Load tenant data from DynamoDB (with caching)
+ */
+async function loadTenantsData() {
+    const now = Date.now();
+    if (tenantsCache && (now - tenantsCacheTimestamp) < TENANTS_CACHE_TTL) {
+        return tenantsCache;
+    }
+
+    const tableName = process.env.TENANT_TABLE || 'amfa-tenanttable';
+    
+    const result = await dynamodb.send(new ScanCommand({
+        TableName: tableName,
+        FilterExpression: 'begins_with(id, :prefix)',
+        ExpressionAttributeValues: {
+            ':prefix': { S: 'TENANT#' }
+        },
+        ProjectionExpression: 'id, userpool, spPortalClientId'
+    }));
+
+    const tenants = (result.Items || []).map(item => ({
+        tenantId: item.id?.S?.replace('TENANT#', ''),
+        userPoolId: item.userpool?.S,
+        spPortalClientId: item.spPortalClientId?.S,
+    })).filter(t => t.userPoolId && t.spPortalClientId);
+
+    tenantsCache = tenants;
+    tenantsCacheTimestamp = now;
+    console.log(`[Authorizer] Loaded ${tenants.length} tenant(s) from DynamoDB`);
+    return tenants;
+}
 
 /**
  * Get JWKS client for a specific user pool
@@ -110,25 +150,13 @@ function extractTenantId(event, tokenPayload) {
 }
 
 /**
- * Generate IAM policy for API Gateway
+ * Generate HTTP API v2 simple response format
  */
-function generatePolicy(principalId, effect, resource, context = {}) {
-    const policy = {
-        principalId,
-        policyDocument: {
-            Version: '2012-10-17',
-            Statement: [
-                {
-                    Action: 'execute-api:Invoke',
-                    Effect: effect,
-                    Resource: resource,
-                },
-            ],
-        },
+function generateResponse(isAuthorized, context = {}) {
+    return {
+        isAuthorized,
         context,
     };
-
-    return policy;
 }
 
 /**
@@ -139,7 +167,8 @@ export const handler = async (event) => {
 
     try {
         // Extract token from Authorization header
-        const token = event.authorizationToken;
+        // HTTP API v2 uses event.headers.authorization, REST API v1 uses event.authorizationToken
+        const token = event.headers?.authorization || event.authorizationToken;
         if (!token) {
             throw new Error('No authorization token provided');
         }
@@ -147,8 +176,9 @@ export const handler = async (event) => {
         // Remove 'Bearer ' prefix if present
         const cleanToken = token.replace(/^Bearer\s+/i, '');
 
-        // Get tenant user pools configuration from environment
+        // Get tenant user pools from DynamoDB
         const region = process.env.AWS_REGION || 'us-east-1';
+        const tenantsData = await loadTenantsData();
 
         console.log('Available tenants:', tenantsData.length);
 
@@ -159,7 +189,7 @@ export const handler = async (event) => {
                     cleanToken,
                     region,
                     tenant.userPoolId,
-                    tenant.endUserClientId
+                    tenant.spPortalClientId
                 ).then(result => ({
                     ...result,
                     tenantId: tenant.tenantId
@@ -180,38 +210,28 @@ export const handler = async (event) => {
 
         console.log(`Token verified successfully for tenant: ${validResult.tenantId}`);
 
-        // Extract additional tenant information
-        const tenantId = extractTenantId(event, validResult.payload) || validResult.tenantId;
+        // Use tenant ID from DDB match (most reliable), with header/token fallback
+        const tenantId = validResult.tenantId || extractTenantId(event, validResult.payload);
 
-        // Generate allow policy with context
-        const policy = generatePolicy(
-            validResult.payload.sub, // Use Cognito user ID as principal
-            'Allow',
-            event.methodArn,
-            {
-                tenantId,
-                userPoolId: validResult.userPoolId,
-                clientId: validResult.clientId,
-                username: validResult.payload.username || validResult.payload['cognito:username'],
-                email: validResult.payload.email,
-                groups: JSON.stringify(validResult.payload['cognito:groups'] || []),
-            }
-        );
+        // Generate HTTP API v2 simple response
+        const response = generateResponse(true, {
+            tenantId,
+            userPoolId: validResult.userPoolId,
+            clientId: validResult.clientId,
+            username: validResult.payload.username || validResult.payload['cognito:username'],
+            email: validResult.payload.email,
+            groups: JSON.stringify(validResult.payload['cognito:groups'] || []),
+        });
 
-        console.log('Generated policy:', JSON.stringify(policy, null, 2));
-        return policy;
+        console.log('Generated response:', JSON.stringify(response, null, 2));
+        return response;
 
     } catch (error) {
         console.error('Authorization error:', error);
         
-        // Return deny policy for any errors
-        return generatePolicy(
-            'unauthorized',
-            'Deny',
-            event.methodArn,
-            {
-                error: error.message,
-            }
-        );
+        // Return deny response
+        return generateResponse(false, {
+            error: error.message,
+        });
     }
 };

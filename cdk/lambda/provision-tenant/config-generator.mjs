@@ -86,7 +86,7 @@ function generateAWSConfig(tenantId, tenantName, cognitoResources) {
     aws_user_pools_id: cognitoResources.userPoolId,
     aws_user_pools_web_client_id: cognitoResources.spPortalClientId,
     aws_oauth_domain: cognitoResources.oauthDomain,
-    apiUrl: `https://api.${rootDomain}`,
+    apiUrl: `https://api.adminportal.${rootDomain}`,
     amfa_service_domain: `${tenantId}.idapersona.${rootDomain}`,
     TenantId: tenantId,
     TenantName: tenantName,
@@ -169,7 +169,7 @@ function generateAmfaServiceConfig(tenantId, tenantName, cognitoResources) {
     aws_user_pools_id: cognitoResources.userPoolId,
     aws_user_pools_web_client_id: cognitoResources.spPortalClientId,
     aws_oauth_domain: cognitoResources.oauthDomain,
-    apiUrl: `https://api.${rootDomain}`,
+    apiUrl: `https://api.adminportal.${rootDomain}`,
     amfa_service_domain: `${tenantId}.idapersona.${rootDomain}`,
     _meta: {
       version: "2.0",

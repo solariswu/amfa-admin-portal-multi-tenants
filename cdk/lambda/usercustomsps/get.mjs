@@ -3,11 +3,11 @@
 import { AdminGetUserCommand } from "@aws-sdk/client-cognito-identity-provider";
 
 
-export const getResData = async (id, cognitoISP) => {
+export const getResData = async (id, cognitoISP, userPoolId) => {
 
     const params = {
         Username: id,
-        UserPoolId: process.env.USERPOOL_ID,
+        UserPoolId: userPoolId || process.env.USERPOOL_ID,
     };
 
 	console.info('params', params);

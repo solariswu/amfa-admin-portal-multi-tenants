@@ -31,7 +31,6 @@ export async function saveTenantToDynamoDB(
   tenantData,
   cognitoResources,
   asmData,
-  tenantTables = null,
   status = "provisioning",
 ) {
   const { tenantId, tenantName, contactEmail, orgId, samlproxy } = tenantData;
@@ -72,6 +71,9 @@ export async function saveTenantToDynamoDB(
     userPoolArn: { S: cognitoResources.userPoolArn },
     spPortalClientId: { S: cognitoResources.spPortalClientId },
     samlClientId: { S: cognitoResources.samlClientId },
+    customAuthClientId: { S: cognitoResources.customAuthClientId },
+    customAuthClientSecret: { S: cognitoResources.customAuthClientSecret },
+    samlClientSecret: { S: cognitoResources.samlClientSecret },
     oauthDomain: { S: cognitoResources.oauthDomain },
     // ASM data
     asmClientId: { S: asmData.asmClientId },
@@ -96,10 +98,6 @@ export async function saveTenantToDynamoDB(
   // Add optional fields if present
   if (tenantData.adminEmail) {
     item.adminEmail = { S: tenantData.adminEmail };
-  }
-
-  if (cognitoResources.samlClientSecret) {
-    item.samlClientSecret = { S: cognitoResources.samlClientSecret };
   }
 
   const command = new PutItemCommand({
@@ -204,6 +202,9 @@ export async function getTenantFromDynamoDB(tenantId) {
       userPoolArn: item.userPoolArn?.S,
       spPortalClientId: item.spPortalClientId?.S,
       samlClientId: item.samlClientId?.S,
+      samlClientSecret: item.samlClientSecret?.S,
+      customAuthClientId: item.customAuthClientId?.S,
+      customAuthClientSecret: item.customAuthClientSecret?.S,
       oauthDomain: item.oauthDomain?.S,
       status: item.status?.S || "active",
     };

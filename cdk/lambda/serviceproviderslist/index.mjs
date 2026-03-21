@@ -11,7 +11,7 @@ const cognitoISP = new CognitoIdentityProviderClient({ region: process.env.AWS_R
 const samlurl = process.env.SAMLPROXY_API_URL;
 const Limit = 60;
 
-const getSAMLSpInfo = async (dynamodb, cognitoToken) => {
+const getSAMLSpInfo = async (dynamodb, cognitoToken, spInfoTable) => {
     let data = []
 
     try {
@@ -33,7 +33,7 @@ const getSAMLSpInfo = async (dynamodb, cognitoToken) => {
             console.log('samlslist getting item with id from ddb', resData[item].id)
 
             const params = {
-                TableName: process.env.AMFA_SPINFO_TABLE,
+                TableName: spInfoTable,
                 Key: {
                     id: { S: `#SAML#${resData[item].id}` },
                 },
@@ -74,10 +74,10 @@ const getSAMLSpInfo = async (dynamodb, cognitoToken) => {
     return data;
 }
 
-const getSPInfo = async (dynamodb, clientId) => {
+const getSPInfo = async (dynamodb, clientId, spInfoTable) => {
 
     const params = {
-        TableName: process.env.AMFA_SPINFO_TABLE,
+        TableName: spInfoTable,
         Key: {
             id: { S: `#OIDC#${clientId}` },
         },
@@ -126,10 +126,18 @@ export const handler = async (event) => {
 
     try {
 
+        // Get UserPoolId and tenantId from authorizer context (multi-tenant)
+        const authContext = event.requestContext?.authorizer?.lambda || event.requestContext?.authorizer || {};
+        const userPoolId = authContext.userPoolId || process.env.USERPOOL_ID;
+        const tenantId = authContext.tenantId;
+
+        // Per-tenant spinfo table: amfa-spinfo-{tenantId}
+        const spInfoTable = tenantId ? `amfa-spinfo-${tenantId}` : process.env.AMFA_SPINFO_TABLE;
+
         const params = {
             Limit,
             ...(event.body && { NextToken: event.body }), // tokens[1] contain the token query for page 1.
-            UserPoolId: process.env.USERPOOL_ID,
+            UserPoolId: userPoolId,
         }
 
         console.info('params', params);
@@ -142,10 +150,9 @@ export const handler = async (event) => {
                 appclient =>
                     appclient.ClientName !== 'hostedUIClient' &&
                     appclient.ClientName !== 'customAuthClient' &&
-                    appclient.ClientName !== 'samlproxyClient' &&
                     !appclient.ClientName.startsWith('amfasys_'));
             for (const item of res) {
-                const spInfo = await getSPInfo(dynamodbISP, item.ClientId);
+                const spInfo = await getSPInfo(dynamodbISP, item.ClientId, spInfoTable);
                 if (spInfo && spInfo.serviceProviders.length > 0) {
                     resData.push({
                         id: item.ClientId,
@@ -158,7 +165,7 @@ export const handler = async (event) => {
             }
         }
 
-        const samlsps = await getSAMLSpInfo(dynamodbISP, cognitoToken);
+        const samlsps = await getSAMLSpInfo(dynamodbISP, cognitoToken, spInfoTable);
 
         samlsps.forEach(samlsp => {
             // hide non-released sp from end user

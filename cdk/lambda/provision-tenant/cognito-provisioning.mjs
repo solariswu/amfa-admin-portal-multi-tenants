@@ -22,6 +22,7 @@ import {
   CreateGroupCommand,
   DescribeUserPoolCommand,
   UpdateUserPoolCommand,
+  UpdateUserPoolClientCommand,
   SetUserPoolMfaConfigCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
@@ -115,6 +116,15 @@ export async function provisionCognitoResources(tenantData, asmData) {
     tenantName,
   );
   console.log(`[Cognito] SAML client created: ${samlClient.clientId}`);
+
+  // 5b. Add samlproxy callback URL to SAML client
+  // The samlproxy callback URL requires the clientId which is only known after creation
+  await addSamlProxyCallbackUrl(
+    userPoolResult.userPoolId,
+    samlClient.clientId,
+    tenantId,
+  );
+  console.log(`[Cognito] SAML proxy callback URL added to SAML client`);
 
   // 6. Create Hosted UI Client (uses OIDC provider)
   const hostedUIClient = await createHostedUIClient(
@@ -360,7 +370,7 @@ async function createOIDCProvider(
  * Create SAML client for SAML integration
  * (This client existed before - keeping it as is)
  */
-async function createSAMLClient(userPoolId, tenantId, tenantName) {
+async function createSAMLClient(userPoolId, tenantId) {
   const clientName = "amfasys_samlClient";
   const rootDomain = process.env.ROOT_DOMAIN_NAME;
 
@@ -376,15 +386,11 @@ async function createSAMLClient(userPoolId, tenantId, tenantName) {
       AccessToken: "minutes",
       IdToken: "minutes",
     },
-    ReadAttributes: ["email", "email_verified", "name", "family_name"],
-    WriteAttributes: ["email", "name", "family_name"],
     ExplicitAuthFlows: [
-      "ALLOW_USER_PASSWORD_AUTH",
-      "ALLOW_REFRESH_TOKEN_AUTH",
       "ALLOW_USER_SRP_AUTH",
     ],
-    SupportedIdentityProviders: ["COGNITO"],
-    AllowedOAuthFlows: ["code", "implicit"],
+    SupportedIdentityProviders: [AMFA_IDP_NAME], // Uses 'apersona' OIDC provider
+    AllowedOAuthFlows: ["code"],
     AllowedOAuthScopes: ["openid", "email", "profile"],
     AllowedOAuthFlowsUserPoolClient: true,
     CallbackURLs: [
@@ -401,6 +407,62 @@ async function createSAMLClient(userPoolId, tenantId, tenantName) {
     clientId: response.UserPoolClient.ClientId,
     clientSecret: response.UserPoolClient.ClientSecret,
   };
+}
+
+/**
+ * Add samlproxy callback URL to the SAML client.
+ *
+ * After the SAML client is created, we need to add the samlproxy callback URL
+ * which requires the clientId (chicken-and-egg: can't set it at creation time).
+ * The callback URL format is: `{SAML_PROXY_BASE_URL}{samlClientId}`
+ * e.g. https://samlproxy.apersona-id.com/{samlClientId}
+ *
+ * Uses UpdateUserPoolClient to append the samlproxy URL to existing CallbackURLs.
+ */
+async function addSamlProxyCallbackUrl(userPoolId, samlClientId, tenantId) {
+  const samlProxyBaseUrl = process.env.SAML_PROXY_BASE_URL;
+  const rootDomain = process.env.ROOT_DOMAIN_NAME;
+
+  if (!samlProxyBaseUrl) {
+    console.warn("[Cognito] SAML_PROXY_BASE_URL not configured, skipping samlproxy callback URL");
+    return;
+  }
+
+  const samlProxyCallbackUrl = `${samlProxyBaseUrl}${samlClientId}`;
+
+  const command = new UpdateUserPoolClientCommand({
+    UserPoolId: userPoolId,
+    ClientId: samlClientId,
+    // Must re-specify all settings since UpdateUserPoolClient replaces the config
+    ClientName: "amfasys_samlClient",
+    GenerateSecret: true,
+    RefreshTokenValidity: 30,
+    AccessTokenValidity: 60,
+    IdTokenValidity: 60,
+    TokenValidityUnits: {
+      RefreshToken: "days",
+      AccessToken: "minutes",
+      IdToken: "minutes",
+    },
+    ExplicitAuthFlows: [
+      "ALLOW_REFRESH_TOKEN_AUTH",
+      "ALLOW_USER_SRP_AUTH",
+    ],
+    SupportedIdentityProviders: [AMFA_IDP_NAME], // Uses 'apersona' OIDC provider
+    AllowedOAuthFlows: ["code"],
+    AllowedOAuthScopes: ["openid", "email", "profile"],
+    AllowedOAuthFlowsUserPoolClient: true,
+    CallbackURLs: [
+      `https://${tenantId}.idapersona.${rootDomain}/callback`,
+      `https://${tenantId}.idapersona.${rootDomain}/saml/callback`,
+      samlProxyCallbackUrl,
+    ],
+    LogoutURLs: [`https://${tenantId}.idapersona.${rootDomain}/logout`],
+    PreventUserExistenceErrors: "ENABLED",
+  });
+
+  await cognito.send(command);
+  console.log(`[Cognito] Added samlproxy callback URL: ${samlProxyCallbackUrl}`);
 }
 
 /**
@@ -425,8 +487,11 @@ async function createHostedUIClient(userPoolId, tenantId, tenantName) {
 
   const logoutUrls = [
     `https://${tenantId}.login.${rootDomain}/`,
+    `https://${tenantId}.login.${rootDomain}`,
     `https://${tenantId}.idapersona.${rootDomain}/`,
+    `https://${tenantId}.idapersona.${rootDomain}`,
     "http://localhost:3000/",
+    "http://localhost:3000",
   ];
 
   const command = new CreateUserPoolClientCommand({

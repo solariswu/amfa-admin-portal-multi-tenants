@@ -16,6 +16,7 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import {
   HttpUserPoolAuthorizer,
   HttpLambdaAuthorizer,
+  HttpLambdaResponseType,
 } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { Function, Code, Runtime, LayerVersion } from "aws-cdk-lib/aws-lambda";
 
@@ -606,13 +607,23 @@ export class SSOApiGateway {
       },
     );
 
-    // Grant permissions to describe user pools and read from DynamoDB
+    // Grant permissions to describe user pools and read tenant table from DynamoDB
     multiTenantAuthorizerLambda.role?.attachInlinePolicy(
       new Policy(this.scope, "MultiTenantAuthorizerPolicy", {
         statements: [
           new PolicyStatement({
             actions: ["cognito-idp:DescribeUserPool"],
             resources: [`arn:aws:cognito-idp:${this.region}:*:userpool/*`],
+          }),
+          new PolicyStatement({
+            actions: [
+              "dynamodb:Scan",
+              "dynamodb:GetItem",
+              "dynamodb:Query",
+            ],
+            resources: [
+              `arn:aws:dynamodb:${this.region}:${this.account}:table/${AMFATENANT_TABLE}`,
+            ],
           }),
         ],
       }),
@@ -622,6 +633,9 @@ export class SSOApiGateway {
     this.multiTenantAuthorizor = new HttpLambdaAuthorizer(
       "MultiTenantHttpAuthorizer",
       multiTenantAuthorizerLambda,
+      {
+        responseTypes: [HttpLambdaResponseType.SIMPLE],
+      },
     );
   }
 
@@ -664,7 +678,6 @@ export class SSOApiGateway {
         path.join(__dirname, `/../lambda/${lambdaName}/dist`),
       ),
       environment: {
-        AMFA_SPINFO_TABLE: "amfa-spinfo",
         SAMLPROXY_API_URL: samlproxy_api_url,
         SAMLPROXY_RELOAD_URL: samlproxy_reload_url,
         SAMLPROXY_CLEAN_URL: samlproxy_clean_url,
@@ -1116,7 +1129,6 @@ export class SSOApiGateway {
         ...(authLayer && { layers: [authLayer] }),
         environment: {
           AMFA_BASE_URL: this.amfaBaseUrl,
-          AMFA_SPINFO_TABLE: "amfa-spinfo",
           AMFATENANT_TABLE,
           IMPORTUSERS_WORKER_LAMBDA: this.importUsersWorkerLambda.functionName,
           IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
@@ -1139,7 +1151,6 @@ export class SSOApiGateway {
         environment: {
           USERPOOL_ID: userPoolId,
           AMFA_BASE_URL: this.amfaBaseUrl,
-          AMFA_SPINFO_TABLE: "amfa-spinfo",
           AMFATENANT_TABLE,
           IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
           ACCOUNT_ID: this.account || "",

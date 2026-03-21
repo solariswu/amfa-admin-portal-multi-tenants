@@ -154,7 +154,6 @@ export const handler = async (event) => {
       tenantData,
       cognitoResources,
       asmData,
-      null,
       "provisioning",
     );
     provisioningLog.push({

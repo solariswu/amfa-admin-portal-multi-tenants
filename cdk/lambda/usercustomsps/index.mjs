@@ -35,14 +35,18 @@ export const handler = async (event) => {
 
     let errMsg = { type: 'exception', message: 'Service Error' };
 
+    // Get UserPoolId from authorizer context (multi-tenant) or env var (legacy)
+    const authContext = event.requestContext?.authorizer?.lambda || event.requestContext?.authorizer || {};
+    const userPoolId = authContext.userPoolId || process.env.USERPOOL_ID;
+
     try {
         switch (event.requestContext.http.method) {
             case 'GET':
-                const getResult = await getResData(event.pathParameters?.id, cognitoISP);
+                const getResult = await getResData(event.pathParameters?.id, cognitoISP, userPoolId);
                 return response(200, JSON.stringify({ data: getResult }));
             case 'PUT':
                 const payload = JSON.parse(event.body);
-                const putResult = await putResData(event.pathParameters?.id, payload, cognitoISP);
+                const putResult = await putResData(event.pathParameters?.id, payload, cognitoISP, userPoolId);
                 return response(200, JSON.stringify(putResult));
             case 'OPTIONS':
                 return response(200, JSON.stringify({ data: 'ok' }));

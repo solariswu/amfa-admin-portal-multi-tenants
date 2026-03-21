@@ -75,7 +75,6 @@ export const handler = async (event) => {
 					appclient =>
 						appclient.ClientName !== 'hostedUIClient' &&
 						appclient.ClientName !== 'customAuthClient' &&
-						appclient.ClientName !== 'samlproxyClient' &&
 						!appclient.ClientName.startsWith('amfasys_'));
 				for (const item of res) {
 					const clientData = await cognitoISP.send(new DescribeUserPoolClientCommand({

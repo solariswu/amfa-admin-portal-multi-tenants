@@ -3,11 +3,11 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 
 
-export const putResData = async (id, userCustomSps, cognitoISP) => {
+export const putResData = async (id, userCustomSps, cognitoISP, userPoolId) => {
 	console.log('putResData Input id:', id, ' userCustomSps', userCustomSps);
 
 	let params = {
-		UserPoolId: process.env.USERPOOL_ID,
+		UserPoolId: userPoolId || process.env.USERPOOL_ID,
 		Username: id,
 		UserAttributes: [
 			{ // AttributeType

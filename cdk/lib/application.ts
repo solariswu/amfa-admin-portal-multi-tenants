@@ -19,7 +19,7 @@ import { Source } from "aws-cdk-lib/aws-s3-deployment";
 
 import { SSOApiGateway } from "./httpapi";
 import { SSOUserPool } from "./userpool";
-import { hostedUI_domain_prefix, project_name, amfa_api_base } from "../config/config";
+import { hostedUI_domain_prefix, project_name, amfa_api_base, samlproxy_base_url } from "../config/config";
 import { createPostDeploymentLambda } from "./postDeployment";
 import * as path from "path";
 
@@ -118,6 +118,7 @@ export class AppStack extends Stack {
         VERIFY_AUTH_CHALLENGE_LAMBDA_ARN: verifyAuthChallengeLambdaArn,
         CUSTOM_EMAIL_SENDER_LAMBDA_ARN: customEmailSenderLambdaArn,
         CUSTOM_SENDER_KMS_KEY_ARN: customSenderKmsKeyArn,
+        SAML_PROXY_BASE_URL: samlproxy_base_url || "",
       },
     });
 
