@@ -2,6 +2,8 @@
 
 # dependencies
 node_modules
+# Keep custom admin-auth Lambda layer module (not an npm dependency)
+!cdk/lambda-layers/auth-layer/nodejs/node_modules/admin-auth/
 /.pnp
 .pnp.js
 

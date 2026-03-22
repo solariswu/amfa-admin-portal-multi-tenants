@@ -4,12 +4,17 @@
  * Handles cleanup of partially provisioned resources when tenant provisioning fails.
  * Ensures no orphaned resources are left behind.
  *
- * Rollback order (reverse of provisioning):
- * 1. Delete from DynamoDB
- * 2. Delete config files from S3
- * 3. Delete per-tenant DynamoDB tables
- * 4. Delete Cognito resources (UserPool, clients)
- * 5. Keep ASM registration (can be reused)
+ * Rollback order (reverse of provisioning, LIFO):
+ * 1. Delete from DynamoDB (tenant record)
+ * 2. Delete per-tenant secrets from Secrets Manager (smtp, secret, asm)
+ * 3. Delete config entries from amfa-configtable
+ * 4. Delete config files from S3
+ * 5. Delete per-tenant DynamoDB tables
+ * 6. Delete Cognito resources (UserPool domain + UserPool)
+ * 7. ASM cleanup:
+ *    a. Deregister TA admin via tenantAdmin.ap (action=remove)
+ *    b. Delete ASM client via deleteAsmClient.ap
+ *    c. Delete ASM tenant secret (apersona/asm/tenant/{tenantId})
  */
 
 import {
@@ -18,10 +23,18 @@ import {
   DeleteUserPoolDomainCommand,
   DescribeUserPoolCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+  DeleteSecretCommand,
+} from "@aws-sdk/client-secrets-manager";
 import { deleteTenantFromDynamoDB } from "./dynamodb-operations.mjs";
 import { deleteConfigFiles } from "./config-generator.mjs";
 
 const cognito = new CognitoIdentityProviderClient({
+  region: process.env.AWS_REGION,
+});
+const secretsManager = new SecretsManagerClient({
   region: process.env.AWS_REGION,
 });
 
@@ -94,7 +107,16 @@ async function rollbackStep(step) {
       break;
 
     case "asm":
+    case "asm-tenant":
       await rollbackASM(data);
+      break;
+
+    case "secrets":
+      await rollbackSecrets(data);
+      break;
+
+    case "configs":
+      await rollbackConfigTableEntries(data);
       break;
 
     default:
@@ -265,26 +287,254 @@ async function rollbackCognito(data) {
 /**
  * Rollback ASM registration
  *
- * Note: We DON'T delete ASM registration because:
- * 1. It can be reused for the same tenant
- * 2. ASM portal doesn't provide a delete API
- * 3. Keeping it doesn't cause issues
+ * Cleans up ASM resources created during provisioning:
+ * 1. Deregister the TA admin from ASM via tenantAdmin.ap (action=remove)
+ * 2. Delete the ASM client via deleteAsmClient.ap
  */
 async function rollbackASM(data) {
   const tenantId = data?.tenantId;
+  const asmClientId = data?.asmClientId;
 
   if (!tenantId) {
     console.warn("[ROLLBACK] No tenant ID provided for ASM rollback");
     return;
   }
 
-  console.log(
-    `[ROLLBACK] Keeping ASM registration for tenant ${tenantId} (can be reused)`,
-  );
+  const asmPortalUrl = process.env.ASM_PORTAL_URL;
+  if (!asmPortalUrl) {
+    console.warn("[ROLLBACK] ASM_PORTAL_URL not configured, skipping ASM rollback");
+    return;
+  }
 
-  // ASM registration is kept in Secrets Manager
-  // It will be reused if the same tenant is provisioned again
-  // This is intentional - no action needed
+  // Read tenant and org credentials from Secrets Manager
+  const tenantSecretName = `apersona/asm/tenant/${tenantId}`;
+  let tenantCredentials;
+  try {
+    const secretResult = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: tenantSecretName }),
+    );
+    tenantCredentials = JSON.parse(secretResult.SecretString);
+  } catch (secretError) {
+    console.warn(`[ROLLBACK] Could not read tenant ASM credentials (${tenantSecretName}): ${secretError.message}`);
+    console.warn(`[ROLLBACK] Skipping ASM cleanup — credentials not available`);
+    return;
+  }
+
+  const resolvedAsmClientId = asmClientId || tenantCredentials.asmClientId;
+  const asmClientSecretKey = tenantCredentials.asmClientSecretKey || "";
+  const orgId = tenantCredentials.orgId;
+
+  if (!orgId) {
+    console.warn("[ROLLBACK] No orgId found in tenant credentials, skipping ASM rollback");
+    return;
+  }
+
+  // Read org credentials to get asmSecretKey
+  const orgSecretName = `apersona/asm/org/${orgId}`;
+  let orgCredentials;
+  try {
+    const secretResult = await secretsManager.send(
+      new GetSecretValueCommand({ SecretId: orgSecretName }),
+    );
+    orgCredentials = JSON.parse(secretResult.SecretString);
+  } catch (secretError) {
+    console.warn(`[ROLLBACK] Could not read org ASM credentials (${orgSecretName}): ${secretError.message}`);
+    console.warn(`[ROLLBACK] Skipping ASM cleanup — org credentials not available`);
+    return;
+  }
+
+  const asmSecretKey = orgCredentials.asmSecretKey;
+  if (!asmSecretKey) {
+    console.warn("[ROLLBACK] No asmSecretKey found for org, skipping ASM rollback");
+    return;
+  }
+
+  // Step 1: Deregister the TA admin(s) that were added during newTenantAssignmentWithDefaults
+  // The newTenantAssignmentWithDefaults.ap call adds newTenantAdminEmail as a TA admin
+  const tenantAdminEmail = tenantCredentials.awsAdminEmail || tenantCredentials.newTenantAdminEmail;
+  if (tenantAdminEmail && resolvedAsmClientId) {
+    console.log(`[ROLLBACK] Deregistering TA admin '${tenantAdminEmail}' from ASM...`);
+
+    // Read tenant name (fallback to tenantId)
+    let tenantName = tenantId;
+    if (tenantCredentials.asmClientName) {
+      tenantName = tenantCredentials.asmClientName;
+    }
+
+    try {
+      const formData = new URLSearchParams({
+        tenantId: resolvedAsmClientId,
+        tenantName: tenantName,
+        tenantAdminEmail: tenantAdminEmail,
+        action: "remove",
+        requestedBy: "provision-tenant-rollback",
+        awsAccountId: process.env.ACCOUNT_ID || "",
+        asmSecretKey: asmSecretKey,
+      });
+
+      const response = await fetch(`${asmPortalUrl}/tenantAdmin.ap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData.toString(),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`[ROLLBACK] ✓ TA admin deregistered from ASM:`, JSON.stringify(result));
+      } else {
+        const errorText = await response.text();
+        console.warn(`[ROLLBACK] tenantAdmin.ap (action=remove) failed (${response.status}): ${errorText}`);
+      }
+    } catch (asmError) {
+      console.warn(`[ROLLBACK] Failed to deregister TA admin from ASM (non-fatal): ${asmError.message}`);
+    }
+  }
+
+  // Step 2: Delete the ASM client (tenant) via deleteAsmClient.ap
+  if (resolvedAsmClientId) {
+    console.log(`[ROLLBACK] Deleting ASM client ${resolvedAsmClientId}...`);
+
+    try {
+      const formData = new URLSearchParams({
+        asmClientId: resolvedAsmClientId,
+        requestedBy: "provision-tenant-rollback",
+        asmSecretKey: asmSecretKey,
+        asmClientSecretKey: asmClientSecretKey || asmSecretKey,
+      });
+
+      const response = await fetch(`${asmPortalUrl}/deleteAsmClient.ap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData.toString(),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`[ROLLBACK] ✓ ASM client deleted:`, JSON.stringify(result));
+      } else {
+        const errorText = await response.text();
+        console.warn(`[ROLLBACK] deleteAsmClient.ap failed (${response.status}): ${errorText}`);
+      }
+    } catch (asmError) {
+      console.warn(`[ROLLBACK] Failed to delete ASM client (non-fatal): ${asmError.message}`);
+    }
+  } else {
+    console.warn("[ROLLBACK] No asmClientId available, skipping ASM client deletion");
+  }
+
+  // Step 3: Delete ASM tenant secret from Secrets Manager
+  // This is the apersona/asm/tenant/{tenantId} secret created by asm-shared.mjs
+  console.log(`[ROLLBACK] Deleting ASM tenant secret: ${tenantSecretName}`);
+  try {
+    await secretsManager.send(
+      new DeleteSecretCommand({
+        SecretId: tenantSecretName,
+        ForceDeleteWithoutRecovery: true,
+      }),
+    );
+    console.log(`[ROLLBACK] ✓ Deleted ASM tenant secret: ${tenantSecretName}`);
+  } catch (deleteError) {
+    if (deleteError.name === "ResourceNotFoundException") {
+      console.log(`[ROLLBACK] ASM tenant secret ${tenantSecretName} not found, skipping`);
+    } else {
+      console.warn(`[ROLLBACK] Failed to delete ASM tenant secret (non-fatal): ${deleteError.message}`);
+    }
+  }
+}
+
+/**
+ * Rollback per-tenant Secrets Manager secrets
+ *
+ * Deletes secrets created in Step 5.6 of provisioning:
+ * - apersona/{tenantId}/smtp
+ * - apersona/{tenantId}/secret
+ * - apersona/{tenantId}/asm
+ */
+async function rollbackSecrets(data) {
+  const tenantId = data?.tenantId;
+  const secrets = data?.secrets || [];
+
+  if (!tenantId) {
+    console.warn("[ROLLBACK] No tenant ID provided for secrets rollback");
+    return;
+  }
+
+  // If specific secret names were logged, delete those
+  // Otherwise, delete the known per-tenant secrets
+  const secretNames = secrets.length > 0
+    ? secrets
+    : [
+        `apersona/${tenantId}/smtp`,
+        `apersona/${tenantId}/secret`,
+        `apersona/${tenantId}/asm`,
+      ];
+
+  console.log(`[ROLLBACK] Deleting ${secretNames.length} per-tenant secret(s) for tenant ${tenantId}`);
+
+  for (const secretName of secretNames) {
+    try {
+      await secretsManager.send(
+        new DeleteSecretCommand({
+          SecretId: secretName,
+          ForceDeleteWithoutRecovery: true,
+        }),
+      );
+      console.log(`[ROLLBACK] ✓ Deleted secret: ${secretName}`);
+    } catch (error) {
+      if (error.name === "ResourceNotFoundException") {
+        console.log(`[ROLLBACK] Secret ${secretName} not found, skipping`);
+      } else {
+        console.error(`[ROLLBACK] ✗ Failed to delete ${secretName}: ${error.message}`);
+        // Non-fatal — continue with other secrets
+      }
+    }
+  }
+}
+
+/**
+ * Rollback config entries from amfa-configtable
+ *
+ * Deletes config entries created in Step 5.5 of provisioning:
+ * - amfaBrandings, amfaConfigs, amfaLegals, amfaPolicies
+ */
+async function rollbackConfigTableEntries(data) {
+  const tenantId = data?.tenantId;
+  const configTypes = data?.configTypes || [];
+
+  if (!tenantId) {
+    console.warn("[ROLLBACK] No tenant ID provided for config table rollback");
+    return;
+  }
+
+  // If specific config types were logged, delete those
+  // Otherwise, delete the known config types
+  const typesToDelete = configTypes.length > 0
+    ? configTypes
+    : ["amfaBrandings", "amfaConfigs", "amfaLegals", "amfaPolicies"];
+
+  const { DynamoDBClient, DeleteItemCommand } = await import("@aws-sdk/client-dynamodb");
+  const dynamodb = new DynamoDBClient({ region: process.env.AWS_REGION });
+  const configTable = "amfa-configtable";
+
+  console.log(`[ROLLBACK] Deleting ${typesToDelete.length} config entries for tenant ${tenantId}`);
+
+  for (const configType of typesToDelete) {
+    try {
+      await dynamodb.send(
+        new DeleteItemCommand({
+          TableName: configTable,
+          Key: {
+            id: { S: tenantId },
+            configtype: { S: configType },
+          },
+        }),
+      );
+      console.log(`[ROLLBACK] ✓ Deleted ${configType} for tenant ${tenantId}`);
+    } catch (error) {
+      console.error(`[ROLLBACK] ✗ Failed to delete ${configType} for ${tenantId}: ${error.message}`);
+      // Non-fatal — continue with other config types
+    }
+  }
 }
 
 /**

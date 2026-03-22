@@ -20,16 +20,14 @@ import {
   CreateUserPoolDomainCommand,
   CreateIdentityProviderCommand,
   CreateGroupCommand,
+  CreateResourceServerCommand,
   DescribeUserPoolCommand,
   UpdateUserPoolCommand,
   UpdateUserPoolClientCommand,
   SetUserPoolMfaConfigCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
-import {
-  LambdaClient,
-  AddPermissionCommand,
-} from "@aws-sdk/client-lambda";
+import { LambdaClient, AddPermissionCommand } from "@aws-sdk/client-lambda";
 
 const cognito = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION,
@@ -41,6 +39,10 @@ const lambda = new LambdaClient({
 
 /** OIDC Identity Provider name - must match the original CDK constant */
 const AMFA_IDP_NAME = "apersona";
+
+/** Resource Server constants - must match original CDK const.ts */
+const RESOURCE_SERVER_IDENTIFIER = "amfa";
+const TOTP_SCOPE_NAME = "totptoken";
 
 /**
  * Compute deterministic domain hash from input string.
@@ -82,6 +84,12 @@ export async function provisionCognitoResources(tenantData, asmData) {
   const userPoolResult = await createUserPool(tenantId, tenantName);
   console.log(`[Cognito] UserPool created: ${userPoolResult.userPoolId}`);
 
+  // 1b. Create Resource Server (required for client_credentials OAuth scope)
+  await createResourceServer(userPoolResult.userPoolId);
+  console.log(
+    `[Cognito] Resource server '${RESOURCE_SERVER_IDENTIFIER}' created with scope '${TOTP_SCOPE_NAME}'`,
+  );
+
   // 2. Create UserPool Domain (deterministic)
   const domainName = await createUserPoolDomain(
     userPoolResult.userPoolId,
@@ -95,7 +103,9 @@ export async function provisionCognitoResources(tenantData, asmData) {
     userPoolResult.userPoolId,
     tenantId,
   );
-  console.log(`[Cognito] Custom auth client created: ${customAuthClient.clientId}`);
+  console.log(
+    `[Cognito] Custom auth client created: ${customAuthClient.clientId}`,
+  );
 
   // 4. Create OIDC Identity Provider ('apersona')
   await createOIDCProvider(
@@ -134,12 +144,23 @@ export async function provisionCognitoResources(tenantData, asmData) {
   );
   console.log(`[Cognito] Hosted UI client created: ${hostedUIClient.clientId}`);
 
+  // 6b. Create Client Credentials Client (for mobile token API / TOTP)
+  const clientCredentialsClient = await createClientCredentialsClient(
+    userPoolResult.userPoolId,
+  );
+  console.log(
+    `[Cognito] Client credentials client created: ${clientCredentialsClient.clientId}`,
+  );
+
   // 7. Attach Lambda Triggers
   await attachLambdaTriggers(userPoolResult.userPoolId, tenantId);
   console.log(`[Cognito] Lambda triggers attached`);
 
   // 8. Create User Groups from amfaPolicies apiKeys
-  await createUserGroupsFromPolicies(userPoolResult.userPoolId, asmData.apiKeys);
+  await createUserGroupsFromPolicies(
+    userPoolResult.userPoolId,
+    asmData.apiKeys,
+  );
   console.log(`[Cognito] User groups created from amfaPolicies`);
 
   // 9. Return all resource information
@@ -153,6 +174,8 @@ export async function provisionCognitoResources(tenantData, asmData) {
     samlClientId: samlClient.clientId,
     samlClientSecret: samlClient.clientSecret,
     spPortalClientId: hostedUIClient.clientId,
+    clientCredentialsClientId: clientCredentialsClient.clientId,
+    clientCredentialsClientSecret: clientCredentialsClient.clientSecret,
     region,
   };
 }
@@ -386,9 +409,7 @@ async function createSAMLClient(userPoolId, tenantId) {
       AccessToken: "minutes",
       IdToken: "minutes",
     },
-    ExplicitAuthFlows: [
-      "ALLOW_USER_SRP_AUTH",
-    ],
+    ExplicitAuthFlows: ["ALLOW_USER_SRP_AUTH"],
     SupportedIdentityProviders: [AMFA_IDP_NAME], // Uses 'apersona' OIDC provider
     AllowedOAuthFlows: ["code"],
     AllowedOAuthScopes: ["openid", "email", "profile"],
@@ -424,7 +445,9 @@ async function addSamlProxyCallbackUrl(userPoolId, samlClientId, tenantId) {
   const rootDomain = process.env.ROOT_DOMAIN_NAME;
 
   if (!samlProxyBaseUrl) {
-    console.warn("[Cognito] SAML_PROXY_BASE_URL not configured, skipping samlproxy callback URL");
+    console.warn(
+      "[Cognito] SAML_PROXY_BASE_URL not configured, skipping samlproxy callback URL",
+    );
     return;
   }
 
@@ -444,10 +467,7 @@ async function addSamlProxyCallbackUrl(userPoolId, samlClientId, tenantId) {
       AccessToken: "minutes",
       IdToken: "minutes",
     },
-    ExplicitAuthFlows: [
-      "ALLOW_REFRESH_TOKEN_AUTH",
-      "ALLOW_USER_SRP_AUTH",
-    ],
+    ExplicitAuthFlows: ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_SRP_AUTH"],
     SupportedIdentityProviders: [AMFA_IDP_NAME], // Uses 'apersona' OIDC provider
     AllowedOAuthFlows: ["code"],
     AllowedOAuthScopes: ["openid", "email", "profile"],
@@ -462,7 +482,9 @@ async function addSamlProxyCallbackUrl(userPoolId, samlClientId, tenantId) {
   });
 
   await cognito.send(command);
-  console.log(`[Cognito] Added samlproxy callback URL: ${samlProxyCallbackUrl}`);
+  console.log(
+    `[Cognito] Added samlproxy callback URL: ${samlProxyCallbackUrl}`,
+  );
 }
 
 /**
@@ -498,10 +520,7 @@ async function createHostedUIClient(userPoolId, tenantId, tenantName) {
     UserPoolId: userPoolId,
     ClientName: "amfasys_hostedUIClient",
     GenerateSecret: false, // Public client for frontend
-    ExplicitAuthFlows: [
-      "ALLOW_USER_SRP_AUTH",
-      "ALLOW_REFRESH_TOKEN_AUTH",
-    ],
+    ExplicitAuthFlows: ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
     // Rich read attributes matching CDK original
     ReadAttributes: [
       "address",
@@ -551,23 +570,49 @@ async function attachLambdaTriggers(userPoolId, tenantId) {
   const customEmailSenderArn = process.env.CUSTOM_EMAIL_SENDER_LAMBDA_ARN;
   const customSenderKmsKeyArn = process.env.CUSTOM_SENDER_KMS_KEY_ARN;
 
-  if (!createAuthChallengeArn || !defineAuthChallengeArn || !verifyAuthChallengeArn) {
-    console.warn("[Cognito] Lambda trigger ARNs not configured, skipping trigger attachment");
+  if (
+    !createAuthChallengeArn ||
+    !defineAuthChallengeArn ||
+    !verifyAuthChallengeArn
+  ) {
+    console.warn(
+      "[Cognito] Lambda trigger ARNs not configured, skipping trigger attachment",
+    );
     return;
   }
 
   // First, grant Cognito permission to invoke each Lambda
-  await grantCognitoInvokePermission(createAuthChallengeArn, userPoolId, tenantId, "CreateAuthChallenge");
-  await grantCognitoInvokePermission(defineAuthChallengeArn, userPoolId, tenantId, "DefineAuthChallenge");
-  await grantCognitoInvokePermission(verifyAuthChallengeArn, userPoolId, tenantId, "VerifyAuthChallenge");
+  await grantCognitoInvokePermission(
+    createAuthChallengeArn,
+    userPoolId,
+    tenantId,
+    "CreateAuthChallenge",
+  );
+  await grantCognitoInvokePermission(
+    defineAuthChallengeArn,
+    userPoolId,
+    tenantId,
+    "DefineAuthChallenge",
+  );
+  await grantCognitoInvokePermission(
+    verifyAuthChallengeArn,
+    userPoolId,
+    tenantId,
+    "VerifyAuthChallenge",
+  );
 
   if (customEmailSenderArn) {
-    await grantCognitoInvokePermission(customEmailSenderArn, userPoolId, tenantId, "CustomEmailSender");
+    await grantCognitoInvokePermission(
+      customEmailSenderArn,
+      userPoolId,
+      tenantId,
+      "CustomEmailSender",
+    );
   }
 
   // Get current UserPool configuration
   const describeResponse = await cognito.send(
-    new DescribeUserPoolCommand({ UserPoolId: userPoolId })
+    new DescribeUserPoolCommand({ UserPoolId: userPoolId }),
   );
 
   const currentPool = describeResponse.UserPool;
@@ -612,7 +657,12 @@ async function attachLambdaTriggers(userPoolId, tenantId) {
  * Grant Cognito permission to invoke a Lambda function
  * Required for Lambda triggers to work
  */
-async function grantCognitoInvokePermission(lambdaArn, userPoolId, tenantId, triggerName) {
+async function grantCognitoInvokePermission(
+  lambdaArn,
+  userPoolId,
+  tenantId,
+  triggerName,
+) {
   try {
     const command = new AddPermissionCommand({
       FunctionName: lambdaArn,
@@ -623,13 +673,20 @@ async function grantCognitoInvokePermission(lambdaArn, userPoolId, tenantId, tri
     });
 
     await lambda.send(command);
-    console.log(`[Cognito] Granted invoke permission for ${triggerName} on tenant ${tenantId}`);
+    console.log(
+      `[Cognito] Granted invoke permission for ${triggerName} on tenant ${tenantId}`,
+    );
   } catch (error) {
     // Permission may already exist if Lambda is shared across tenants
     if (error.name === "ResourceConflictException") {
-      console.log(`[Cognito] Invoke permission already exists for ${triggerName} on tenant ${tenantId}`);
+      console.log(
+        `[Cognito] Invoke permission already exists for ${triggerName} on tenant ${tenantId}`,
+      );
     } else {
-      console.warn(`[Cognito] Failed to grant invoke permission for ${triggerName}:`, error.message);
+      console.warn(
+        `[Cognito] Failed to grant invoke permission for ${triggerName}:`,
+        error.message,
+      );
       // Don't throw - triggers can still work if permission was previously granted
     }
   }
@@ -647,21 +704,25 @@ async function grantCognitoInvokePermission(lambdaArn, userPoolId, tenantId, tri
  * @param {Object} apiKeys - API keys from ASM registration (e.g. { "admin": "admin-5-xxx", "user": "user-100-yyy", ... })
  */
 async function createUserGroupsFromPolicies(userPoolId, apiKeys) {
-  if (!apiKeys || typeof apiKeys !== 'object') {
+  if (!apiKeys || typeof apiKeys !== "object") {
     console.warn("[Cognito] No apiKeys provided, skipping user group creation");
     return;
   }
 
   const groupNames = Object.keys(apiKeys).filter(
-    (name) => !name.includes("-") && name !== "default"
+    (name) => !name.includes("-") && name !== "default",
   );
 
   if (groupNames.length === 0) {
-    console.log("[Cognito] No user group policies found in apiKeys, skipping group creation");
+    console.log(
+      "[Cognito] No user group policies found in apiKeys, skipping group creation",
+    );
     return;
   }
 
-  console.log(`[Cognito] Creating ${groupNames.length} user groups: ${groupNames.join(", ")}`);
+  console.log(
+    `[Cognito] Creating ${groupNames.length} user groups: ${groupNames.join(", ")}`,
+  );
 
   for (const groupName of groupNames) {
     try {
@@ -670,18 +731,81 @@ async function createUserGroupsFromPolicies(userPoolId, apiKeys) {
           UserPoolId: userPoolId,
           GroupName: groupName,
           Description: `Auto-created from amfaPolicies during tenant provisioning`,
-        })
+        }),
       );
       console.log(`[Cognito]   ✓ Group '${groupName}' created`);
     } catch (error) {
       if (error.name === "GroupExistsException") {
-        console.log(`[Cognito]   ⚠ Group '${groupName}' already exists, skipping`);
+        console.log(
+          `[Cognito]   ⚠ Group '${groupName}' already exists, skipping`,
+        );
       } else {
-        console.warn(`[Cognito]   ✗ Failed to create group '${groupName}':`, error.message);
+        console.warn(
+          `[Cognito]   ✗ Failed to create group '${groupName}':`,
+          error.message,
+        );
         // Non-fatal: continue creating other groups
       }
     }
   }
+}
+
+/**
+ * Create Resource Server on the UserPool.
+ * Matches CDK userpool.ts addResourceServer('AMFAResourceServer') configuration.
+ *
+ * Creates a resource server with identifier 'amfa' and scope 'totptoken'.
+ * This is required before the client_credentials client can reference
+ * the scope 'amfa/totptoken'.
+ *
+ * @param {string} userPoolId - The Cognito UserPool ID
+ */
+async function createResourceServer(userPoolId) {
+  const command = new CreateResourceServerCommand({
+    UserPoolId: userPoolId,
+    Identifier: RESOURCE_SERVER_IDENTIFIER,
+    Name: "AMFAResourceServer",
+    Scopes: [
+      {
+        ScopeName: TOTP_SCOPE_NAME,
+        ScopeDescription: TOTP_SCOPE_NAME,
+      },
+    ],
+  });
+
+  await cognito.send(command);
+}
+
+/**
+ * Create Client Credentials App Client.
+ * Matches CDK userpool.ts addClientCredentialClient() configuration.
+ *
+ * This client uses the OAuth2 client_credentials grant flow to obtain
+ * access tokens scoped to 'amfa/totptoken' for the mobile token API.
+ * Uses COGNITO as the identity provider (not OIDC 'apersona').
+ *
+ * @param {string} userPoolId - The Cognito UserPool ID
+ * @returns {Object} { clientId, clientSecret }
+ */
+async function createClientCredentialsClient(userPoolId) {
+  const command = new CreateUserPoolClientCommand({
+    UserPoolId: userPoolId,
+    ClientName: "amfasys_clientcredentials",
+    GenerateSecret: true,
+    ExplicitAuthFlows: ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
+    SupportedIdentityProviders: ["COGNITO"],
+    AllowedOAuthFlows: ["client_credentials"],
+    AllowedOAuthScopes: [`${RESOURCE_SERVER_IDENTIFIER}/${TOTP_SCOPE_NAME}`],
+    AllowedOAuthFlowsUserPoolClient: true,
+    CallbackURLs: ["https://example.com"], // Required placeholder for OAuth config
+  });
+
+  const response = await cognito.send(command);
+
+  return {
+    clientId: response.UserPoolClient.ClientId,
+    clientSecret: response.UserPoolClient.ClientSecret,
+  };
 }
 
 /**

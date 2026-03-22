@@ -17,6 +17,7 @@ import { validateTenantData } from "./validation.mjs";
 import {
   getOrCreateServiceProvider,
   registerTenantWithASM,
+  updateAsmMobileTokenDetails,
 } from "./asm-shared.mjs";
 import { provisionCognitoResources } from "./cognito-provisioning.mjs";
 import { createTenantTables } from "./table-provisioning.mjs";
@@ -129,6 +130,22 @@ export const handler = async (event) => {
     console.log(
       `[STEP 3/6]   SP Portal Client ID: ${cognitoResources.spPortalClientId}`,
     );
+    console.log(
+      `[STEP 3/6]   Client Credentials Client ID: ${cognitoResources.clientCredentialsClientId}`,
+    );
+
+    // ========================================
+    // STEP 3.5: Register Mobile Token Details with ASM
+    // ========================================
+    console.log("\n[STEP 3.5/7] Registering mobile token details with ASM...");
+    const rootDomain = process.env.ROOT_DOMAIN_NAME || "";
+    await updateAsmMobileTokenDetails(
+      asmData,
+      orgCredentials,
+      cognitoResources,
+      rootDomain,
+    );
+    console.log("[STEP 3.5/7] ✓ Mobile token details registered with ASM");
 
     // ========================================
     // STEP 4: Generate Config Files

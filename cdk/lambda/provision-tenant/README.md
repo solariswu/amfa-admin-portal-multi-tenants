@@ -45,12 +45,12 @@ Input validation:
 - Required field checks
 - XSS prevention
 
-### `asm-registration.mjs`
-ASM portal integration:
-- Checks for existing registration
-- Registers new tenant if needed
-- Stores credentials in Secrets Manager
-- Retry logic for network failures
+### `asm-shared.mjs`
+ASM portal integration (org + tenant level):
+- Gets or creates ASM Service Provider per organization
+- Registers new tenant with ASM portal
+- Updates mobile token details with ASM (client credentials)
+- Stores org and tenant credentials in Secrets Manager
 
 ### `cognito-provisioning.mjs`
 Cognito resource creation:

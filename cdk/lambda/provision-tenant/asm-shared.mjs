@@ -318,7 +318,7 @@ export async function registerTenantWithASM(tenantData, orgCredentials) {
     asmClientName: asmData.asmClientName,
     mobileTokenKey: asmData.mobileTokenKey,
     mobileTokenSalt: asmData.mobileTokenSalt,
-    asmClientSecretKey: asmData.asmClientSecretKey,
+    asmClientSecretKey: orgCredentials.asmSecretKey,
     asmSecretKeyNew: asmData.asmSecretKeyNew,
     apiKeys: asmData.apiKeys || {},
     asmPortalUrl: asmPortalUrl,
@@ -367,6 +367,91 @@ export async function getSharedASMCredentials() {
       `Failed to retrieve shared ASM credentials: ${error.message}`,
     );
   }
+}
+
+/**
+ * Update ASM Client Mobile Token Details.
+ *
+ * Calls the ASM portal API `updateAsmClientMobileTokenDetails.ap` to register
+ * the Cognito client_credentials app client with ASM. This allows ASM to
+ * obtain OAuth2 tokens for the mobile token (TOTP) API.
+ *
+ * @param {Object} asmData - ASM registration data (asmClientId)
+ * @param {Object} orgCredentials - Org credentials (asmSecretKey used as asmClientSecretKey)
+ * @param {Object} cognitoResources - Cognito resources (clientCredentialsClientId, clientCredentialsClientSecret, oauthDomain)
+ * @param {string} rootDomain - Root domain name for API endpoint
+ */
+export async function updateAsmMobileTokenDetails(
+  asmData,
+  orgCredentials,
+  cognitoResources,
+  rootDomain,
+) {
+  const asmPortalUrl = process.env.ASM_PORTAL_URL;
+
+  if (!asmPortalUrl) {
+    console.warn(
+      "[ASM] ASM_PORTAL_URL not configured, skipping mobile token details update",
+    );
+    return;
+  }
+
+  const mobileTokenAuthEndpointUri = `https://${cognitoResources.oauthDomain}/oauth2/token`;
+  const mobileTokenApiEndpointUri = `https://api.${rootDomain}/totptoken`;
+
+  const requestBody = {
+    asmClientId: parseInt(asmData.asmClientId, 10),
+    asmClientSecretKey: orgCredentials.asmSecretKey,
+    mobileTokenApiClientId: cognitoResources.clientCredentialsClientId,
+    mobileTokenApiClientSecret: cognitoResources.clientCredentialsClientSecret,
+    mobileTokenAuthEndpointUri: mobileTokenAuthEndpointUri,
+    mobileTokenApiEndpointUri: mobileTokenApiEndpointUri,
+  };
+
+  console.log(
+    `[ASM] Updating mobile token details for ASM client ${asmData.asmClientId}:`,
+  );
+  console.log(
+    `[ASM]   URL: ${asmPortalUrl}/updateAsmClientMobileTokenDetails.ap`,
+  );
+  console.log(
+    `[ASM]   Mobile Token API Client ID: ${cognitoResources.clientCredentialsClientId}`,
+  );
+  console.log(
+    `[ASM]   Mobile Token Auth Endpoint: ${mobileTokenAuthEndpointUri}`,
+  );
+  console.log(
+    `[ASM]   Mobile Token API Endpoint: ${mobileTokenApiEndpointUri}`,
+  );
+
+  const response = await fetch(
+    `${asmPortalUrl}/updateAsmClientMobileTokenDetails.ap`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `ASM updateAsmClientMobileTokenDetails failed (${response.status}): ${errorText}`,
+    );
+  }
+
+  const result = await response.json();
+
+  if (result.code !== 200) {
+    throw new Error(
+      `ASM updateAsmClientMobileTokenDetails returned error: ${JSON.stringify(result)}`,
+    );
+  }
+
+  console.log(
+    `[ASM] ✓ Mobile token details registered with ASM: ${result.message || "Success"}`,
+  );
+  return result;
 }
 
 /**

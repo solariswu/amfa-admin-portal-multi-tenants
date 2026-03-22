@@ -894,7 +894,7 @@ export class SSOApiGateway {
 
     // Add permissions for tenants Lambda (hard delete support)
     if (lambdaName === "tenants") {
-      // Cognito: DeleteGroup + DescribeUserPool + DeleteUserPoolDomain
+      // Cognito: DeleteGroup + DescribeUserPool + DeleteUserPoolDomain + ListUsersInGroup
       lambda.role?.attachInlinePolicy(
         new Policy(this.scope, `${lambdaName}-cognito-policy`, {
           statements: [
@@ -906,6 +906,7 @@ export class SSOApiGateway {
                 "cognito-idp:DeleteGroup",
                 "cognito-idp:DescribeUserPool",
                 "cognito-idp:DeleteUserPoolDomain",
+                "cognito-idp:ListUsersInGroup",
               ],
             }),
           ],
@@ -1164,6 +1165,46 @@ export class SSOApiGateway {
       );
 
       // Secrets Manager read access for org and tenant ASM credentials
+      lambda.role?.attachInlinePolicy(
+        new Policy(this.scope, `${lambdaName}-secrets-policy`, {
+          statements: [
+            new PolicyStatement({
+              resources: [
+                `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/asm/org/*`,
+                `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/asm/tenant/*`,
+              ],
+              actions: ["secretsmanager:GetSecretValue"],
+            }),
+          ],
+        }),
+      );
+
+      return lambda;
+    } else if (lambdaName === "admins") {
+      // admins Lambda needs ASM_PORTAL_URL and Secrets Manager access
+      // for deregistering TA/SPA admins from ASM portal on delete/edit
+      const lambda = new Function(this.scope, lambdaName, {
+        runtime: Runtime.NODEJS_LATEST,
+        handler: "index.handler",
+        code: Code.fromAsset(path.join(__dirname, `/../lambda/${lambdaName}`)),
+        ...(authLayer && { layers: [authLayer] }),
+        environment: {
+          USERPOOL_ID: userPoolId,
+          AMFA_BASE_URL: this.amfaBaseUrl,
+          AMFATENANT_TABLE,
+          IMPORTUSERS_BUCKET: this.imoprtUsersJobsS3Bucket.bucketName,
+          ACCOUNT_ID: this.account || "",
+          ASM_PORTAL_URL: process.env.ASM_PORTAL_URL || "",
+        },
+        timeout: Duration.minutes(5),
+      });
+
+      lambda.role?.attachInlinePolicy(
+        new Policy(this.scope, `${lambdaName}-policy`, { statements }),
+      );
+
+      // Secrets Manager read access for org and tenant ASM credentials
+      // needed by deregisterTAAdminFromASM() and warnSPAAdminRemovalNotSynced()
       lambda.role?.attachInlinePolicy(
         new Policy(this.scope, `${lambdaName}-secrets-policy`, {
           statements: [

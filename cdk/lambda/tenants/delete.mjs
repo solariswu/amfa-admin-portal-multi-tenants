@@ -9,6 +9,7 @@ import {
   DeleteGroupCommand,
   DescribeUserPoolCommand,
   DeleteUserPoolDomainCommand,
+  ListUsersInGroupCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import {
   SecretsManagerClient,
@@ -16,7 +17,7 @@ import {
   DeleteSecretCommand,
 } from "@aws-sdk/client-secrets-manager";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import { validateTenantAccess } from "admin-auth";
+import { validateTenantAccess, deregisterTAAdminFromASM } from "admin-auth";
 
 /**
  * Feature flag: When true, hard-deletes all tenant-specific AWS resources.
@@ -512,7 +513,58 @@ export const deleteResData = async (event, dynamodb) => {
     }
   }
 
-  // ---- Step 7: Delete TA group from admin userpool (always) ----
+  // ---- Step 7a: Deregister all TA admins from ASM before deleting the group ----
+  // This must happen BEFORE deleteTAGroup() and BEFORE tenant secrets are deleted,
+  // so we do it here. The deregisterTAAdminFromASM helper reads credentials from
+  // Secrets Manager (which may already be deleted if HARD_DELETE was run above).
+  // For safety, we attempt this even if some earlier steps failed.
+  try {
+    const adminUserPoolId = process.env.ADMIN_USERPOOL_ID;
+    if (adminUserPoolId) {
+      const groupName = `TA_${tenantId}`;
+      console.log(`[ASM] Listing users in group '${groupName}' to deregister from ASM...`);
+
+      try {
+        const listResult = await cognito.send(
+          new ListUsersInGroupCommand({
+            GroupName: groupName,
+            UserPoolId: adminUserPoolId,
+          }),
+        );
+
+        const users = listResult.Users || [];
+        console.log(`[ASM] Found ${users.length} user(s) in group '${groupName}'`);
+
+        for (const user of users) {
+          const emailAttr = (user.Attributes || []).find(a => a.Name === "email");
+          const userEmail = emailAttr?.Value || user.Username;
+
+          try {
+            await deregisterTAAdminFromASM(
+              userEmail.toLowerCase(),
+              tenantId,
+              requesterEmail,
+            );
+          } catch (asmError) {
+            console.error(
+              `[ASM] ✗ Failed to deregister TA admin '${userEmail}' from ASM (non-fatal):`,
+              asmError.message,
+            );
+          }
+        }
+      } catch (listError) {
+        if (listError.name === "ResourceNotFoundException") {
+          console.log(`[ASM] Group '${groupName}' not found, no TA admins to deregister`);
+        } else {
+          console.error(`[ASM] ✗ Failed to list users in group '${groupName}' (non-fatal):`, listError.message);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`[ASM] ✗ Failed to deregister TA admins from ASM (non-fatal):`, error.message);
+  }
+
+  // ---- Step 7b: Delete TA group from admin userpool (always) ----
   await deleteTAGroup(tenantId);
 
   // ---- Step 8: Delete tenant record (LAST — so retry is possible if above steps fail) ----

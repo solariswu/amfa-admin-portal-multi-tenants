@@ -9,6 +9,12 @@ import {
     AdminResetUserPasswordCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 
+// Import shared ASM utilities from lambda layer
+import {
+    deregisterTAAdminFromASM,
+    warnSPAAdminRemovalNotSynced,
+} from "admin-auth";
+
 const assignGroup = async (username, group, cognitoISP) => {
     return await cognitoISP.send(new AdminAddUserToGroupCommand({
         UserPoolId: process.env.USERPOOL_ID,
@@ -50,7 +56,30 @@ const removeGroups = async (username, existingGroups, newGroups, cognitoISP) => 
         return;
     }
 
-    return Promise.all(existingGroups.map((group) => deleteGroup(username, group, cognitoISP)))
+    // Remove groups from Cognito
+    await Promise.all(existingGroups.map((group) => deleteGroup(username, group, cognitoISP)));
+
+    // Deregister removed TA/SPA roles from ASM Portal
+    for (const group of existingGroups) {
+        if (group.startsWith('TA_')) {
+            const tenantId = group.substring(3);
+            try {
+                await deregisterTAAdminFromASM(
+                    username.toLowerCase(),
+                    tenantId,
+                    username.toLowerCase(), // requestedBy
+                );
+            } catch (asmError) {
+                console.error(`[ASM] Failed to deregister TA admin from ASM for tenant '${tenantId}' (non-fatal):`, asmError.message);
+            }
+        } else if (group.startsWith('SPA_')) {
+            const orgId = group.substring(4);
+            // TODO: Call ASM removeServiceProviderAdmin API once available.
+            // Currently no ASM Portal endpoint exists to deregister an SPA admin.
+            // The user is removed from Cognito but remains in ASM's service provider admin list.
+            warnSPAAdminRemovalNotSynced(username, orgId);
+        }
+    }
 }
 
 export const putResData = async (data, cognitoISP) => {

@@ -3,15 +3,8 @@ import { PublicHostedZone } from "aws-cdk-lib/aws-route53";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { StringParameter } from "aws-cdk-lib/aws-ssm";
 
-import {
-  CfnOutput,
-  Stack,
-  StackProps,
-  Duration,
-  CustomResource,
-} from "aws-cdk-lib";
+import { CfnOutput, Stack, StackProps, Duration } from "aws-cdk-lib";
 import { Function, Runtime, Code } from "aws-cdk-lib/aws-lambda";
-import { Provider } from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 
 import { WebApplication } from "./webapp";
@@ -19,7 +12,12 @@ import { Source } from "aws-cdk-lib/aws-s3-deployment";
 
 import { SSOApiGateway } from "./httpapi";
 import { SSOUserPool } from "./userpool";
-import { hostedUI_domain_prefix, project_name, amfa_api_base, samlproxy_base_url } from "../config/config";
+import {
+  hostedUI_domain_prefix,
+  project_name,
+  amfa_api_base,
+  samlproxy_base_url,
+} from "../config/config";
 import { createPostDeploymentLambda } from "./postDeployment";
 import * as path from "path";
 
@@ -119,6 +117,12 @@ export class AppStack extends Stack {
         CUSTOM_EMAIL_SENDER_LAMBDA_ARN: customEmailSenderLambdaArn,
         CUSTOM_SENDER_KMS_KEY_ARN: customSenderKmsKeyArn,
         SAML_PROXY_BASE_URL: samlproxy_base_url || "",
+        // SMTP defaults for new tenant provisioning (from tenants-config.json via shell env)
+        SMTP_HOST: process.env.SMTP_HOST || "smtp.google.com",
+        SMTP_USER: process.env.SMTP_USER || "",
+        SMTP_PASS: process.env.SMTP_PASS || "",
+        SMTP_PORT: process.env.SMTP_PORT || "587",
+        SMTP_SECURE: process.env.SMTP_SECURE || "false",
       },
     });
 
@@ -137,7 +141,7 @@ export class AppStack extends Stack {
       }),
     );
 
-    // Secrets Manager - Write operations for org/tenant credential storage
+    // Secrets Manager - Write operations for org/tenant credential storage and rollback cleanup
     provisionTenantLambda.addToRolePolicy(
       new PolicyStatement({
         actions: [
@@ -145,6 +149,7 @@ export class AppStack extends Stack {
           "secretsmanager:UpdateSecret",
           "secretsmanager:PutSecretValue",
           "secretsmanager:TagResource",
+          "secretsmanager:DeleteSecret", // Required for rollback cleanup of tenant secrets
         ],
         resources: [
           `arn:aws:secretsmanager:${this.region}:${this.account}:secret:apersona/*`,
@@ -225,10 +230,11 @@ export class AppStack extends Stack {
           "cognito-idp:DeleteUserPoolDomain",
           "cognito-idp:DescribeUserPool",
           "cognito-idp:DescribeUserPoolClient",
-          "cognito-idp:CreateIdentityProvider",  // For creating OIDC provider
+          "cognito-idp:CreateIdentityProvider", // For creating OIDC provider
           "cognito-idp:UpdateIdentityProvider",
           "cognito-idp:DeleteIdentityProvider",
           "cognito-idp:DescribeIdentityProvider",
+          "cognito-idp:CreateResourceServer", // For creating resource server (amfa/totptoken scope)
           "cognito-idp:CreateGroup",
           "cognito-idp:AdminCreateUser",
           "cognito-idp:AdminAddUserToGroup",
@@ -242,13 +248,8 @@ export class AppStack extends Stack {
     // 4b. Lambda - Permission to add invoke permissions for Cognito triggers
     provisionTenantLambda.addToRolePolicy(
       new PolicyStatement({
-        actions: [
-          "lambda:AddPermission",
-          "lambda:RemovePermission",
-        ],
-        resources: [
-          `arn:aws:lambda:${this.region}:${this.account}:function:*`,
-        ],
+        actions: ["lambda:AddPermission", "lambda:RemovePermission"],
+        resources: [`arn:aws:lambda:${this.region}:${this.account}:function:*`],
       }),
     );
 
@@ -256,10 +257,7 @@ export class AppStack extends Stack {
     // Required when UpdateUserPool sets CustomEmailSender with KMSKeyID
     provisionTenantLambda.addToRolePolicy(
       new PolicyStatement({
-        actions: [
-          "kms:CreateGrant",
-          "kms:DescribeKey",
-        ],
+        actions: ["kms:CreateGrant", "kms:DescribeKey"],
         resources: ["*"], // KMS key ARN is dynamic (from SSM)
       }),
     );
@@ -331,7 +329,8 @@ export class AppStack extends Stack {
     let hostedUiHash = 0;
     if (hostedUiStr) {
       for (let i = 0; i < hostedUiStr.length; i++) {
-        hostedUiHash = ((hostedUiHash << 5) - hostedUiHash + hostedUiStr.charCodeAt(i)) | 0;
+        hostedUiHash =
+          ((hostedUiHash << 5) - hostedUiHash + hostedUiStr.charCodeAt(i)) | 0;
       }
     }
     const hostedUiUrl = `https://${hostedUI_domain_prefix}-${(hostedUiHash >>> 0).toString(36)}.auth.${props.env?.region}.amazoncognito.com`;
@@ -345,9 +344,7 @@ export class AppStack extends Stack {
     ].join("\n");
 
     // Deploy dist/ + amfaext.js together in one BucketDeployment
-    webapp.deployAssets([
-      Source.data("amfaext.js", amfaExtContent),
-    ]);
+    webapp.deployAssets([Source.data("amfaext.js", amfaExtContent)]);
 
     // Note: Tenant information is now dynamically queried from DynamoDB
     // No need for static CloudFormation outputs
